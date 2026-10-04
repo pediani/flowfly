@@ -5,7 +5,8 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 const supabase = createClient(supabaseUrl, supabaseKey)
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8851525928:AAEqYzJNcwBQjzLI0OGUrx0zNn-wCDXj-sc'
+// O token agora vem estritamente da variável de ambiente segura da Vercel
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || ''
 
 export async function GET() {
   return NextResponse.json({ status: 'FlowFly Telegram Webhook is active and listening!' })
@@ -25,7 +26,6 @@ export async function POST(request: Request) {
     const text = message.text.trim()
     const telegramUserId = String(message.from.id)
 
-    // Verificar se o usuário já está conectado no FlowFly via tabela telegram_connections
     const { data: connection } = await supabase
       .from('telegram_connections')
       .select('user_id')
@@ -38,8 +38,6 @@ export async function POST(request: Request) {
     }
 
     const userId = connection.user_id
-
-    // Exemplo de comando: "mercado 45.90" ou "uber 30"
     const parts = text.split(' ')
     if (parts.length < 2) {
       await sendTelegramMessage(chatId, '❌ Formato inválido. Use por exemplo: `mercado 45.90` ou `uber 30`')
@@ -54,7 +52,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true })
     }
 
-    // Inserir despesa no Supabase
     const { error } = await supabase.from('transactions').insert({
       user_id: userId,
       amount: amount,
@@ -79,6 +76,7 @@ export async function POST(request: Request) {
 }
 
 async function sendTelegramMessage(chatId: number, text: string) {
+  if (!BOT_TOKEN) return
   try {
     await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: 'POST',
