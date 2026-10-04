@@ -6,7 +6,7 @@ import { PieChart, Pie, Cell, Tooltip as PieTooltip, ResponsiveContainer } from 
 import { 
   LayoutDashboard, Calendar, LogOut, 
   TrendingDown, TrendingUp, ArrowRightLeft, AlertCircle, 
-  Trash2, CheckCircle2, Zap, PlusCircle, Mail, Users
+  Trash2, CheckCircle2, Zap, PlusCircle, Mail, Users, Lock
 } from 'lucide-react'
 
 const CATEGORIAS = ['Geral', 'Alimentação', 'Transporte', 'Casa', 'Lazer', 'Saúde', 'Assinaturas']
@@ -18,7 +18,9 @@ export default function Home() {
   
   // Estados de Login
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
+  const [isSignUp, setIsSignUp] = useState(false)
 
   // Estados do Formulário de Transações
   const [amount, setAmount] = useState('')
@@ -42,9 +44,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    // Altera o título da aba do navegador dinamicamente
-    document.title = "FlowFly - Financeiro"
-
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session || null)
     })
@@ -71,7 +70,28 @@ export default function Home() {
     }
   }
 
-  async function handleLogin(e: React.FormEvent) {
+  async function handlePasswordAuth(e: React.FormEvent) {
+    e.preventDefault()
+    setAuthLoading(true)
+
+    if (isSignUp) {
+      const { error } = await supabase.auth.signUp({ email, password })
+      if (error) {
+        alert(error.message)
+      } else {
+        alert('Conta criada com sucesso! Já podes entrar.')
+        setIsSignUp(false)
+      }
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) {
+        alert('Erro ao entrar: ' + error.message)
+      }
+    }
+    setAuthLoading(false)
+  }
+
+  async function handleMagicLink(e: React.FormEvent) {
     e.preventDefault()
     setAuthLoading(true)
     const { error } = await supabase.auth.signInWithOtp({ email })
@@ -184,36 +204,62 @@ export default function Home() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4 font-sans text-zinc-50">
         <div className="w-full max-w-sm rounded-xl border border-zinc-800 bg-zinc-900 p-8 shadow-lg">
-          <div className="flex flex-col items-center gap-2 text-center mb-8">
+          <div className="flex flex-col items-center gap-2 text-center mb-6">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400">
               <Zap className="h-6 w-6" />
             </div>
             <h1 className="text-xl font-bold text-zinc-100 mt-2">FlowFly</h1>
-            <p className="text-sm text-zinc-400">Insira o seu e-mail para acessar o financeiro</p>
+            <p className="text-sm text-zinc-400">{isSignUp ? 'Crie a sua conta com senha' : 'Entre com e-mail e senha'}</p>
           </div>
-          <form onSubmit={handleLogin} className="space-y-4">
+
+          <form onSubmit={handlePasswordAuth} className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium leading-none text-zinc-300">Endereço de E-mail</label>
+              <label className="text-sm font-medium text-zinc-300">E-mail</label>
               <input 
                 type="email" required 
                 value={email} onChange={(e) => setEmail(e.target.value)} 
                 placeholder="seu@email.com" 
-                className="flex h-10 w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm placeholder:text-zinc-600 text-zinc-100 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors"
+                className="flex h-10 w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-zinc-300">Senha</label>
+              <input 
+                type="password" required 
+                value={password} onChange={(e) => setPassword(e.target.value)} 
+                placeholder="••••••••" 
+                className="flex h-10 w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+
             <button 
               type="submit" 
               disabled={authLoading} 
-              className="inline-flex w-full items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:pointer-events-none disabled:opacity-50"
+              className="inline-flex w-full items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors disabled:opacity-50"
             >
-              {authLoading ? 'A processar...' : (
-                <>
-                  <Mail className="mr-2 h-4 w-4" />
-                  Enviar Link de Acesso
-                </>
-              )}
+              {authLoading ? 'A processar...' : (isSignUp ? 'Criar Conta' : 'Entrar')}
             </button>
           </form>
+
+          <div className="mt-4 text-center">
+            <button 
+              onClick={() => setIsSignUp(!isSignUp)} 
+              className="text-xs text-blue-400 hover:underline"
+            >
+              {isSignUp ? 'Já tem conta? Faça login' : 'Não tem conta? Cadastre-se com senha'}
+            </button>
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-zinc-800 text-center">
+            <button 
+              onClick={handleMagicLink} 
+              disabled={authLoading || !email}
+              className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+            >
+              Ou enviar Link Mágico por E-mail
+            </button>
+          </div>
         </div>
       </div>
     )
