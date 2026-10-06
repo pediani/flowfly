@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { todayBR, formatDateBR } from '../lib/dates'
+import ConnectionsPanel, { type Partnership } from '../components/ConnectionsPanel'
 import { PieChart, Pie, Cell, Tooltip as PieTooltip, ResponsiveContainer } from 'recharts'
 import { 
   LayoutDashboard, Calendar, LogOut, 
   TrendingDown, TrendingUp, ArrowRightLeft, AlertCircle, 
-  Trash2, CheckCircle2, Zap, PlusCircle, Mail, Users, Lock
+  Trash2, CheckCircle2, Zap, PlusCircle, Mail, Users, Lock, Send
 } from 'lucide-react'
 
 const CATEGORIAS = ['Geral', 'Alimentação', 'Transporte', 'Casa', 'Lazer', 'Saúde', 'Assinaturas']
@@ -14,7 +16,7 @@ const PIE_COLORS = ['#3b82f6', '#10b981', '#f43f5e', '#f59e0b', '#8b5cf6', '#ef4
 
 export default function Home() {
   const [session, setSession] = useState<any>(undefined) 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'fixas'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'fixas' | 'conexoes'>('dashboard')
   
   // Estados de Login
   const [email, setEmail] = useState('')
@@ -38,8 +40,8 @@ export default function Home() {
   const [recDay, setRecDay] = useState('5')
   const [recurring, setRecurring] = useState<any[]>([])
 
-  // Lista de Usuários Disponíveis para Divisão
-  const [usersList, setUsersList] = useState<any[]>([])
+  // Parceiros aceitos, disponíveis para divisão
+  const [usersList, setUsersList] = useState<Partnership[]>([])
 
   const [loading, setLoading] = useState(false)
 
@@ -62,12 +64,10 @@ export default function Home() {
   }, [session])
 
   async function fetchUsers() {
-    const { data } = await supabase.from('telegram_connections').select('user_id')
-    if (data) {
-      const others = data.filter(c => c.user_id !== session.user.id)
-      setUsersList(others)
-      if (others.length > 0) setSplitPartnerId(others[0].user_id)
-    }
+    const { data } = await supabase.rpc('list_partnerships')
+    const accepted = ((data as Partnership[]) || []).filter(p => p.status === 'accepted')
+    setUsersList(accepted)
+    setSplitPartnerId(prev => accepted.some(p => p.partner_id === prev) ? prev : (accepted[0]?.partner_id || ''))
   }
 
   async function handlePasswordAuth(e: React.FormEvent) {
@@ -118,27 +118,30 @@ export default function Home() {
     e.preventDefault()
     setLoading(true)
     const value = parseFloat(amount.replace(',', '.'))
-    
-    const { error } = await supabase.from('transactions').insert({
-      user_id: session.user.id, 
-      amount: value, 
-      description, 
-      type, 
-      category, 
-      is_split: isSplit, 
-      date: new Date().toISOString().split('T')[0]
-    })
+    const split = isSplit && type === 'saida'
 
-    if (!error && isSplit && splitPartnerId) {
-      await supabase.from('transactions').insert({
-        user_id: splitPartnerId,
-        amount: value / 2,
-        description: `Metade: ${description}`,
-        type: 'a_pagar',
-        category: category,
-        date: new Date().toISOString().split('T')[0]
-      })
+    if (split && !splitPartnerId) {
+      alert('Adicione um parceiro na aba Conexões para dividir despesas.')
+      setLoading(false)
+      return
     }
+
+    // Divisão: a função no banco grava as duas linhas juntas e valida a parceria
+    const { error } = split
+      ? await supabase.rpc('create_split_transaction', {
+          p_amount: value, p_description: description, p_category: category, p_partner_id: splitPartnerId
+        })
+      : await supabase.from('transactions').insert({
+          user_id: session.user.id,
+          amount: value,
+          description,
+          type,
+          category,
+          is_split: false,
+          date: todayBR()
+        })
+
+    if (error) alert(`Erro ao salvar: ${error.message}`)
 
     if (!error) { 
       setAmount(''); setDescription(''); setCategory('Geral'); setIsSplit(false); fetchTransactions() 
@@ -293,6 +296,13 @@ export default function Home() {
                 <Calendar className="h-4 w-4" />
                 Contas Fixas
               </button>
+              <button 
+                onClick={() => setActiveTab('conexoes')} 
+                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all ${activeTab === 'conexoes' ? 'bg-zinc-800 text-zinc-50' : 'text-zinc-400 hover:text-zinc-50 hover:bg-zinc-900'}`}
+              >
+                <Send className="h-4 w-4" />
+                Conexões
+              </button>
             </nav>
           </div>
           <div className="mt-auto p-4 border-t border-zinc-800">
@@ -309,7 +319,7 @@ export default function Home() {
 
       <main className="flex flex-col">
         <header className="flex h-14 items-center gap-4 border-b border-zinc-800 bg-zinc-950 px-6 lg:h-[60px] justify-between">
-          <h1 className="text-lg font-semibold tracking-tight">{activeTab === 'dashboard' ? 'Visão Geral' : 'Contas Fixas'}</h1>
+          <h1 className="text-lg font-semibold tracking-tight">{activeTab === 'dashboard' ? 'Visão Geral' : activeTab === 'fixas' ? 'Contas Fixas' : 'Conexões'}</h1>
           <div className="flex flex-col items-end">
             <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Saldo Disponível</span>
             <span className="text-sm font-bold text-zinc-100">R$ {saldo.toFixed(2)}</span>
@@ -409,7 +419,7 @@ export default function Home() {
                             <tr key={t.id} className={`hover:bg-zinc-800/50 transition-colors ${t.type === 'a_pagar' ? 'bg-red-950/10' : ''}`}>
                               <td className="px-6 py-4 font-medium text-zinc-100">{t.description}</td>
                               <td className="px-6 py-4 text-zinc-400">{t.category}</td>
-                              <td className="px-6 py-4 text-zinc-400">{new Date(t.date).toLocaleDateString('pt-BR')}</td>
+                              <td className="px-6 py-4 text-zinc-400">{formatDateBR(t.date)}</td>
                               <td className="px-6 py-4">
                                 {t.type === 'a_pagar' ? (
                                   <span className="inline-flex items-center rounded-md border border-red-800/50 bg-red-900/20 px-2 py-0.5 text-xs font-semibold text-red-400">Pendente</span>
@@ -518,11 +528,11 @@ export default function Home() {
                                 className="flex h-9 w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
                               >
                                 {usersList.length === 0 ? (
-                                  <option value="">Nenhum outro usuário encontrado</option>
+                                  <option value="">Nenhum parceiro — adicione na aba Conexões</option>
                                 ) : (
-                                  usersList.map((u, idx) => (
-                                    <option key={u.user_id} value={u.user_id}>
-                                      Parceiro(a) #{idx + 1} ({u.user_id.slice(0, 8)}...)
+                                  usersList.map((u) => (
+                                    <option key={u.partner_id} value={u.partner_id}>
+                                      {u.partner_email}
                                     </option>
                                   ))
                                 )}
@@ -650,6 +660,8 @@ export default function Home() {
               </div>
             </div>
           )}
+
+          {activeTab === 'conexoes' && <ConnectionsPanel onPartnersChange={fetchUsers} />}
 
         </div>
       </main>
