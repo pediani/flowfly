@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { parseExpense } from '../../../lib/parseExpense'
+import { todayBR } from '../../../lib/dates'
 
 // O webhook roda no servidor e precisa da service role (ignora RLS).
 // Sem fallback para a anon key: se faltar configuração, falha de forma explícita.
@@ -13,8 +14,6 @@ const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || ''
 const supabase = SUPABASE_URL && SERVICE_ROLE_KEY
   ? createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } })
   : null
-
-const TIMEZONE = 'America/Sao_Paulo'
 
 export async function GET() {
   return NextResponse.json({ status: 'FlowFly Telegram Webhook is active and listening!' })
@@ -44,6 +43,24 @@ export async function POST(request: Request) {
     const chatId: number = message.chat.id
     const text: string = message.text.trim()
 
+    // Vinculação: /start <código> (vindo do link t.me/<bot>?start=<código> gerado no painel)
+    const startMatch = text.match(/^\/start(?:@\w+)?\s+([A-Za-z0-9]{6,20})$/)
+    if (startMatch) {
+      const { data: linkedUser, error: linkError } = await supabase.rpc('consume_telegram_link_code', {
+        p_code: startMatch[1],
+        p_chat_id: chatId,
+      })
+      if (linkError) {
+        console.error('Erro ao vincular Telegram:', linkError)
+        await sendTelegramMessage(chatId, '❌ Erro ao vincular a conta. Tente novamente em instantes.')
+      } else if (!linkedUser) {
+        await sendTelegramMessage(chatId, '⚠️ Código inválido ou expirado. Gere um novo na aba <b>Conexões</b> do painel.')
+      } else {
+        await sendTelegramMessage(chatId, '✅ Conta vinculada! Agora é só mandar suas despesas, ex.: <code>mercado 45,90</code>')
+      }
+      return NextResponse.json({ ok: true })
+    }
+
     const { data: connection, error: connError } = await supabase
       .from('telegram_connections')
       .select('user_id')
@@ -59,7 +76,7 @@ export async function POST(request: Request) {
     if (!connection) {
       await sendTelegramMessage(
         chatId,
-        `⚠️ Conta não vinculada!\nSeu ID do Telegram é <code>${chatId}</code>. Vincule-o no painel do FlowFly.`
+        '⚠️ Conta não vinculada!\nNo painel do FlowFly, abra a aba <b>Conexões</b> e toque em <b>Conectar Telegram</b>.'
       )
       return NextResponse.json({ ok: true })
     }
@@ -81,7 +98,7 @@ export async function POST(request: Request) {
       description: parsed.description,
       type: 'saida',
       category: 'Geral',
-      date: todayInTimezone(),
+      date: todayBR(),
     })
 
     if (error) {
@@ -96,11 +113,6 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ ok: true })
-}
-
-function todayInTimezone(): string {
-  // en-CA formata como YYYY-MM-DD
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE }).format(new Date())
 }
 
 function escapeHtml(s: string): string {
