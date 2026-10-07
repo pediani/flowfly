@@ -19,6 +19,8 @@ import { play } from '../lib/sounds'
 import { CategoryIcon } from './CategoryIcon'
 import { Legend, MonthChart, ProjectionChart } from './Charts'
 import { TransactionItem } from './TransactionItem'
+import GoalsCard, { type Goal } from './GoalsCard'
+import SettlementCard from './SettlementCard'
 import { Card, CardHeader, EmptyState, Money, cx } from './ui'
 
 type Props = {
@@ -32,7 +34,13 @@ type Props = {
   onSeeAll: () => void
   onDelete: (t: Tx) => void
   onPay: (t: Tx) => void
+  onEdit: (t: Tx) => void
   onBudgetsChange: () => void
+  goals: Goal[]
+  onGoalsChange: () => void
+  partnerEmail?: string
+  settlementKey: number
+  onSettled: () => void
 }
 
 export default function Dashboard(p: Props) {
@@ -53,7 +61,7 @@ export default function Dashboard(p: Props) {
       history: monthlyHistory(txs, 13).filter((m) => m.key !== monthKey).slice(0, 6),
       overall: overallBalance(txs),
       debts: pendingDebts(txs),
-      recent: txs.filter((t) => t.date.startsWith(monthKey)).slice(0, 6),
+      recent: txs.filter((t) => t.date.startsWith(monthKey) && t.date <= today).slice(0, 6),
     }
   }, [txs, recurring, installments, budgets, monthKey, today])
 
@@ -124,11 +132,17 @@ export default function Dashboard(p: Props) {
         <CardHeader
           title="Projeção dos próximos meses"
           icon={<Sparkles className="h-4 w-4 text-muted" />}
-          subtitle="Só compromissos conhecidos: contas fixas e parcelas. A linha é o saldo acumulado."
+          subtitle="Só compromissos conhecidos: contas fixas e parcelas agendadas. A linha é o saldo acumulado."
         />
         <div className="h-[250px] px-2"><ProjectionChart data={data.future} /></div>
         <Legend items={[{ color: 'var(--income)', label: 'Entradas' }, { color: 'var(--expense)', label: 'Saídas' }, { color: 'var(--accent)', label: 'Saldo acumulado' }]} />
       </Card>
+
+      {/* METAS + ACERTO */}
+      <div className={cx('grid gap-4', p.partnerEmail && 'lg:grid-cols-2')}>
+        <GoalsCard goals={p.goals} onChange={p.onGoalsChange} />
+        {p.partnerEmail && <SettlementCard partnerEmail={p.partnerEmail} refreshKey={p.settlementKey} onSettled={p.onSettled} />}
+      </div>
 
       {/* ÚLTIMOS + CONSOLIDADO (mesma altura) */}
       <div className="grid gap-4 lg:grid-cols-2">
@@ -140,7 +154,7 @@ export default function Dashboard(p: Props) {
             action={<button onClick={() => { play('tap'); p.onSeeAll() }} className="inline-flex items-center gap-0.5 text-xs font-medium text-accent">Ver todos <ChevronRight className="h-3.5 w-3.5" /></button>}
           />
           {data.recent.length
-            ? <ul className="divide-y divide-line px-5 pb-2">{data.recent.map((t, i) => <TransactionItem key={t.id} t={t} onDelete={p.onDelete} onPay={p.onPay} delay={i * 30} />)}</ul>
+            ? <ul className="divide-y divide-line px-5 pb-2">{data.recent.map((t, i) => <TransactionItem key={t.id} t={t} onDelete={p.onDelete} onPay={p.onPay} onEdit={p.onEdit} delay={i * 30} />)}</ul>
             : <EmptyState icon={Receipt} title="Nada por aqui ainda" text="Toque em + ou mande “s café 8” para o bot." />}
         </Card>
 

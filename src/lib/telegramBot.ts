@@ -1,12 +1,12 @@
 // Mensagens do bot (HTML do Telegram). Funções puras: o route.ts faz o I/O.
 import { CATEGORIES, getCategory } from './categories'
 import { formatBRL } from './format'
-import { formatDateBR, formatDateTimeBR, monthLabel } from './dates'
+import { dateOfIsoBR, formatDateBR, formatDateTimeBR, monthLabel } from './dates'
 import {
   budgetStatus, categoryBreakdown, monthProjection, summarize,
   type Budget, type Recurring, type Tx,
 } from './finance'
-import type { ParsedEntry } from './parseEntry'
+import { installmentDate, splitInstallments, type ParsedEntry } from './parseEntry'
 
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -48,15 +48,21 @@ export function savedMessage(
   const isIn = entry.type === 'entrada'
   const catTotal = categoryBreakdown(monthTxs, key).find((c) => c.category === entry.category)?.total ?? 0
 
+  const parcel = entry.installments > 1
   const lines = [
     `✅ <b>${isIn ? 'Entrada' : 'Saída'} registrada</b>`,
     '',
     `${cat.emoji} <b>${escapeHtml(cap(entry.description))}</b>`,
     `<b>${signed(entry)}</b> · ${escapeHtml(entry.category)}`,
-    `🕒 ${formatDateTimeBR(nowIso)}`,
-    '',
-    monthBlock(monthTxs, key, `${monthLabel(key)} até agora`),
+    entry.date === dateOfIsoBR(nowIso)
+      ? `🕒 ${formatDateTimeBR(nowIso)}`
+      : `📅 ${formatDateBR(entry.date)} <i>(registrado ${formatDateTimeBR(nowIso)})</i>`,
   ]
+  if (parcel) {
+    const parts = splitInstallments(entry.amount, entry.installments)
+    lines.push(`💳 ${entry.installments}x de ${formatBRL(parts[1])} · última em ${formatDateBR(installmentDate(entry.date, entry.installments - 1))}`)
+  }
+  lines.push('', monthBlock(monthTxs, key, `${monthLabel(key)} até agora`))
 
   if (!isIn) {
     lines.push('', `${cat.emoji} ${escapeHtml(entry.category)} no mês: <b>${formatBRL(catTotal)}</b>`)
@@ -64,9 +70,7 @@ export function savedMessage(
     if (b) lines.push(b)
   }
 
-  lines.push('', entry.category === 'Geral' && !entry.categoryExplicit
-    ? '💡 <i>Dica: classifique com #categoria, ex.: <code>s pizza 60 #lazer</code></i>'
-    : '<i>Errou? Envie /desfazer</i>')
+  if (entry.category === 'Geral' && !entry.categoryExplicit) lines.push('', '💡 <i>Use o botão “Categoria” abaixo para classificar.</i>')
   return lines.join('\n')
 }
 
@@ -129,25 +133,99 @@ export function undoMessage(t: Tx, monthTxs: Tx[], key: string): string {
   ].join('\n')
 }
 
-export function helpMessage(): string {
+export function helpMessage(voice = false): string {
   return [
     '⚡ <b>FlowFly</b> — seu financeiro no bolso',
     '',
     '<b>Registrar</b>',
     '• <code>s uber 50,40</code> → saída',
     '• <code>e salário 1000</code> → entrada',
-    '• <code>mercado 120</code> → sem prefixo = saída',
+    '• <code>mercado 120 ontem</code> → com data (<code>ontem</code>, <code>dia 3</code>, <code>05/10</code>)',
+    '• <code>s tv 1200 10x</code> → parcelado (cria as 10 parcelas)',
     '• <code>pizza 60 #lazer</code> → força a categoria',
+    ...(voice ? ['• 🎙️ Mande um <b>áudio</b> ou escreva livre: “gastei 45 no mercado ontem”'] : []),
+    '',
+    'Depois de registrar, use os botões para trocar a categoria, mudar para ontem, dividir ou desfazer.',
     '',
     '<b>Comandos</b>',
     '/resumo — balanço do mês e projeção',
+    '/semana — resumo dos últimos 7 dias',
     '/ultimos — últimos lançamentos',
     '/desfazer — remove o último lançamento feito aqui',
     '/ajuda — esta mensagem',
     '',
-    `<b>Categorias:</b> ${CATEGORIES.map((c) => `${c.emoji} ${c.name}`).join(' · ')}`,
+    '⏰ Todo dia às 9h aviso as contas fixas que vencem e, aos domingos, mando o resumo da semana.',
   ].join('\n')
 }
 
+// ---- Botões (inline keyboards) ----
+
+export type InlineButton = { text: string; callback_data: string }
+export type Keyboard = { inline_keyboard: InlineButton[][] }
+
+export function entryKeyboard(txId: string, opts: { canSplit: boolean; isIn: boolean }): Keyboard {
+  const row1: InlineButton[] = [{ text: '🏷️ Categoria', callback_data: `c:${txId}` }, { text: '📅 Foi ontem', callback_data: `y:${txId}` }]
+  const row2: InlineButton[] = [{ text: '↩️ Desfazer', callback_data: `u:${txId}` }]
+  if (opts.canSplit && !opts.isIn) row2.unshift({ text: '👥 Dividir 50%', callback_data: `d:${txId}` })
+  return { inline_keyboard: [row1, row2] }
+}
+
+export function categoryKeyboard(txId: string): Keyboard {
+  const rows: InlineButton[][] = []
+  CATEGORIES.forEach((c, i) => {
+    if (i % 2 === 0) rows.push([])
+    rows[rows.length - 1].push({ text: `${c.emoji} ${c.name}`, callback_data: `s:${txId}:${i}` })
+  })
+  rows.push([{ text: '← Voltar', callback_data: `b:${txId}` }])
+  return { inline_keyboard: rows }
+}
+
+// ---- Mensagens automáticas (cron) ----
+
+export function reminderMessage(items: { r: Recurring; when: 'hoje' | 'amanhã' }[]): { text: string; keyboard: Keyboard } {
+  const lines = ['⏰ <b>Contas fixas chegando</b>', '']
+  for (const { r, when } of items) {
+    lines.push(`${r.type === 'entrada' ? '💼' : '🧾'} <b>${escapeHtml(r.description)}</b> — ${formatBRL(Number(r.amount))} · vence <b>${when}</b> (dia ${r.day_of_month})`)
+  }
+  lines.push('', '<i>Toque em “Paguei” para lançar.</i>')
+  return {
+    text: lines.join('\n'),
+    keyboard: { inline_keyboard: items.map(({ r }) => [{ text: `✅ ${r.type === 'entrada' ? 'Recebi' : 'Paguei'}: ${r.description.slice(0, 24)}`, callback_data: `p:${r.id}` }]) },
+  }
+}
+
+export function weeklyMessage(txs: Tx[], from: string, to: string): string {
+  const week = txs.filter((t) => t.date >= from && t.date <= to)
+  const entradas = week.filter((t) => t.type === 'entrada').reduce((a, t) => a + Number(t.amount), 0)
+  const saidas = week.filter((t) => t.type === 'saida').reduce((a, t) => a + Number(t.amount), 0)
+  const byCat: Record<string, number> = {}
+  for (const t of week) if (t.type === 'saida') byCat[t.category || 'Geral'] = (byCat[t.category || 'Geral'] || 0) + Number(t.amount)
+  const top = Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 4)
+  const biggest = week.filter((t) => t.type === 'saida').sort((a, b) => Number(b.amount) - Number(a.amount))[0]
+
+  const lines = [
+    `🗞️ <b>Sua semana</b> (${formatDateBR(from).slice(0, 5)} a ${formatDateBR(to).slice(0, 5)})`,
+    '',
+    `⬆️ Entradas: ${formatBRL(entradas)}`,
+    `⬇️ Saídas: ${formatBRL(saidas)}`,
+    `${entradas - saidas >= 0 ? '💰' : '🔻'} Saldo da semana: <b>${formatBRL(entradas - saidas)}</b>`,
+    `🧾 ${week.length} lançamento${week.length === 1 ? '' : 's'}`,
+  ]
+  if (top.length) {
+    lines.push('', '🏷️ <b>O que mais pesou</b>')
+    for (const [c, v] of top) lines.push(`${getCategory(c).emoji} ${escapeHtml(c)}: ${formatBRL(v)}`)
+  }
+  if (biggest) lines.push('', `🔝 Maior gasto: ${escapeHtml(cap(biggest.description))} (${formatBRL(Number(biggest.amount))})`)
+  if (!week.length) lines.push('', '<i>Nenhum lançamento nesta semana. Que tal registrar os gastos de hoje?</i>')
+  return lines.join('\n')
+}
+
+export function budgetAlertMessage(category: string, spent: number, limit: number, level: number): string {
+  const def = getCategory(category)
+  return level >= 100
+    ? `🚨 <b>Orçamento de ${escapeHtml(category)} estourado</b>\n${def.emoji} ${formatBRL(spent)} de ${formatBRL(limit)} (${Math.round((spent / limit) * 100)}%)`
+    : `⚠️ <b>${escapeHtml(category)} chegou a ${Math.round((spent / limit) * 100)}% do orçamento</b>\n${def.emoji} ${formatBRL(spent)} de ${formatBRL(limit)} · restam ${formatBRL(limit - spent)}`
+}
+
 export const INVALID_FORMAT =
-  '🤔 Não entendi. Use <code>s descrição valor</code> ou <code>e descrição valor</code>.\nEx.: <code>s uber 50,40</code> · <code>e salário 1000</code>\n\nEnvie /ajuda para ver tudo.'
+  '🤔 Não entendi. Use <code>s descrição valor</code> ou <code>e descrição valor</code>.\nEx.: <code>s uber 50,40</code> · <code>e salário 1000</code> · <code>mercado 80 ontem</code>\n\nEnvie /ajuda para ver tudo.'

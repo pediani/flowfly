@@ -14,12 +14,16 @@ import Dashboard from '../components/Dashboard'
 import RecurringPanel from '../components/RecurringPanel'
 import TransactionSheet from '../components/TransactionSheet'
 import TransactionsList from '../components/TransactionsList'
+import type { Goal } from '../components/GoalsCard'
 
 export default function Home() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
   const [tab, setTab] = useState<Tab>('inicio')
   const [monthKey, setMonthKey] = useState(currentMonthKey)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [editing, setEditing] = useState<Tx | null>(null)
+  const [goals, setGoals] = useState<Goal[]>([])
+  const [settlementKey, setSettlementKey] = useState(0)
 
   const [txs, setTxs] = useState<Tx[]>([])
   const [recurring, setRecurring] = useState<Recurring[]>([])
@@ -38,6 +42,12 @@ export default function Home() {
       .order('date', { ascending: false })
       .order('created_at', { ascending: false, nullsFirst: false })
     setTxs((data as Tx[]) || [])
+    setSettlementKey((k) => k + 1)
+  }, [])
+
+  const loadGoals = useCallback(async () => {
+    const { data } = await supabase.from('goals').select('*').order('created_at', { ascending: true })
+    setGoals((data as Goal[]) || [])
   }, [])
 
   const loadRecurring = useCallback(async () => {
@@ -58,8 +68,8 @@ export default function Home() {
   const loadAll = useCallback(async () => {
     const { data: inst } = await supabase.from('installments').select('*')
     setInstallments((inst as Installment[]) || [])
-    await Promise.all([loadTransactions(), loadRecurring(), loadBudgets(), loadPartners()])
-  }, [loadTransactions, loadRecurring, loadBudgets, loadPartners])
+    await Promise.all([loadTransactions(), loadRecurring(), loadBudgets(), loadPartners(), loadGoals()])
+  }, [loadTransactions, loadRecurring, loadBudgets, loadPartners, loadGoals])
 
   useEffect(() => {
     if (!session) return
@@ -72,9 +82,19 @@ export default function Home() {
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [session, loadAll, loadTransactions])
 
+  function handleEdit(t: Tx) {
+    play('open')
+    setEditing(t)
+    setSheetOpen(true)
+  }
+
   async function handleDelete(t: Tx) {
-    if (!confirm(`Excluir "${t.description}"?`)) return
-    const { error } = await supabase.from('transactions').delete().eq('id', t.id)
+    const group = (t as Tx & { installment_group?: string | null }).installment_group
+    const all = group && confirm(`"${t.description}" é parcelado. OK = excluir todas as parcelas · Cancelar = só esta`)
+    if (!all && !confirm(`Excluir "${t.description}"?`)) return
+    const { error } = all
+      ? await supabase.from('transactions').delete().eq('installment_group', group)
+      : await supabase.from('transactions').delete().eq('id', t.id)
     play(error ? 'error' : 'delete')
     loadTransactions()
   }
@@ -107,7 +127,7 @@ export default function Home() {
       <AppShell
         tab={tab} onTab={setTab}
         monthKey={monthKey} onMonth={setMonthKey}
-        onNew={() => setSheetOpen(true)}
+        onNew={() => { setEditing(null); setSheetOpen(true) }}
         onSignOut={() => supabase.auth.signOut()}
         email={session.user.email}
       >
@@ -115,17 +135,19 @@ export default function Home() {
           <Dashboard
             userId={userId} txs={txs} recurring={recurring} installments={installments} budgets={budgets}
             monthKey={monthKey} onSelectMonth={setMonthKey} onSeeAll={() => setTab('lancamentos')}
-            onDelete={handleDelete} onPay={handlePay} onBudgetsChange={loadBudgets}
+            onDelete={handleDelete} onPay={handlePay} onEdit={handleEdit} onBudgetsChange={loadBudgets}
+            goals={goals} onGoalsChange={loadGoals} partnerEmail={partners[0]?.partner_email}
+            settlementKey={settlementKey} onSettled={loadTransactions}
           />
         )}
-        {tab === 'lancamentos' && <TransactionsList txs={txs} monthKey={monthKey} onDelete={handleDelete} onPay={handlePay} />}
-        {tab === 'fixas' && <RecurringPanel userId={userId} recurring={recurring} txs={txs} onChange={loadRecurring} />}
+        {tab === 'lancamentos' && <TransactionsList txs={txs} monthKey={monthKey} onDelete={handleDelete} onPay={handlePay} onEdit={handleEdit} />}
+        {tab === 'fixas' && <RecurringPanel userId={userId} recurring={recurring} txs={txs} onChange={loadRecurring} onPaid={loadTransactions} />}
         {tab === 'conexoes' && <ConnectionsPanel onPartnersChange={loadPartners} />}
       </AppShell>
 
       <TransactionSheet
-        open={sheetOpen} onClose={() => setSheetOpen(false)}
-        userId={userId} partners={partners} onSaved={loadTransactions}
+        open={sheetOpen} onClose={() => { setSheetOpen(false); setEditing(null) }}
+        userId={userId} partners={partners} onSaved={loadTransactions} editing={editing}
       />
     </>
   )

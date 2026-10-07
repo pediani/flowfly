@@ -5,6 +5,9 @@ import { ArrowDownRight, ArrowUpRight, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { CATEGORIES, detectCategory, type EntryType } from '../lib/categories'
 import { todayBR } from '../lib/dates'
+import { formatBRL } from '../lib/format'
+import type { Tx } from '../lib/finance'
+import { installmentDate, splitInstallments } from '../lib/parseEntry'
 import { play } from '../lib/sounds'
 import type { Partnership } from './ConnectionsPanel'
 import { CategoryIcon } from './CategoryIcon'
@@ -16,29 +19,40 @@ type Props = {
   userId: string
   partners: Partnership[]
   onSaved: () => void
+  /** Quando definido, o formulário edita este lançamento */
+  editing?: Tx | null
 }
 
-export default function TransactionSheet({ open, onClose, userId, partners, onSaved }: Props) {
-  const [type, setType] = useState<EntryType>('saida')
-  const [amount, setAmount] = useState('')
-  const [description, setDescription] = useState('')
-  const [category, setCategory] = useState('Geral')
-  const [categoryTouched, setCategoryTouched] = useState(false)
+/** Remonta o formulário a cada abertura para carregar os valores certos */
+export default function TransactionSheet(props: Props) {
+  return (
+    <Sheet open={props.open} onClose={props.onClose} title={props.editing ? 'Editar lançamento' : 'Novo lançamento'}>
+      {props.open && <Form key={props.editing?.id || 'new'} {...props} />}
+    </Sheet>
+  )
+}
+
+function Form({ onClose, userId, partners, onSaved, editing }: Props) {
+  const [type, setType] = useState<EntryType>(editing?.type === 'entrada' ? 'entrada' : 'saida')
+  const [amount, setAmount] = useState(editing ? String(editing.amount).replace('.', ',') : '')
+  const [description, setDescription] = useState(editing?.description || '')
+  const [category, setCategory] = useState(editing?.category || 'Geral')
+  const [categoryTouched, setCategoryTouched] = useState(!!editing)
+  const [date, setDate] = useState(editing?.date || todayBR())
+  const [installments, setInstallments] = useState(1)
   const [split, setSplit] = useState(false)
   const [partnerId, setPartnerId] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const selectedPartner = partners.some((p) => p.partner_id === partnerId) ? partnerId : partners[0]?.partner_id || ''
-
-  function reset() {
-    setAmount(''); setDescription(''); setCategory('Geral'); setCategoryTouched(false); setSplit(false); setError(null)
-  }
+  const isIn = type === 'entrada'
+  const value = Math.round(parseFloat(amount.replace(/\./g, '').replace(',', '.')) * 100) / 100
 
   function changeType(t: EntryType) {
     setType(t)
     if (!categoryTouched) setCategory(detectCategory(description, t))
-    if (t === 'entrada') setSplit(false)
+    if (t === 'entrada') { setSplit(false); setInstallments(1) }
   }
 
   function changeDescription(d: string) {
@@ -48,100 +62,130 @@ export default function TransactionSheet({ open, onClose, userId, partners, onSa
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const value = Math.round(parseFloat(amount.replace(/\./g, '').replace(',', '.')) * 100) / 100
     if (!Number.isFinite(value) || value <= 0) { play('error'); setError('Informe um valor válido.'); return }
     if (!description.trim()) { play('error'); setError('Informe uma descrição.'); return }
-    const doSplit = split && type === 'saida'
+    const doSplit = !editing && split && type === 'saida'
     if (doSplit && !selectedPartner) { play('error'); setError('Adicione um parceiro na aba Conexões.'); return }
 
     setSaving(true)
     setError(null)
-    const { error: err } = doSplit
-      ? await supabase.rpc('create_split_transaction', {
-          p_amount: value, p_description: description.trim(), p_category: category, p_partner_id: selectedPartner,
-        })
-      : await supabase.from('transactions').insert({
-          user_id: userId, amount: value, description: description.trim(), type, category,
-          is_split: false, date: todayBR(), source: 'web',
-        })
+    const desc = description.trim()
+    let err: { message: string } | null = null
+
+    if (editing) {
+      ({ error: err } = await supabase.from('transactions')
+        .update({ amount: value, description: desc, type, category, date })
+        .eq('id', editing.id))
+    } else if (doSplit) {
+      ({ error: err } = await supabase.rpc('create_split_transaction', {
+        p_amount: value, p_description: desc, p_category: category, p_partner_id: selectedPartner,
+      }))
+    } else if (installments > 1) {
+      const group = crypto.randomUUID()
+      const parts = splitInstallments(value, installments)
+      ;({ error: err } = await supabase.from('transactions').insert(parts.map((amt, k) => ({
+        user_id: userId, amount: amt, type, category, source: 'web', is_split: false,
+        description: `${desc} (${k + 1}/${installments})`, date: installmentDate(date, k),
+        installment_group: group, installment_no: k + 1, installment_total: installments,
+      }))))
+    } else {
+      ({ error: err } = await supabase.from('transactions').insert({
+        user_id: userId, amount: value, description: desc, type, category, is_split: false, date, source: 'web',
+      }))
+    }
     setSaving(false)
 
     if (err) { play('error'); setError(err.message); return }
-    play(type === 'entrada' ? 'income' : 'expense')
-    reset()
+    play(editing ? 'success' : isIn ? 'income' : 'expense')
     onSaved()
     onClose()
   }
 
-  const isIn = type === 'entrada'
-
   return (
-    <Sheet open={open} onClose={onClose} title="Novo lançamento">
-      <form onSubmit={handleSubmit} className="space-y-5 pb-2">
-        <Segmented
-          value={type}
-          onChange={changeType}
-          options={[
-            { value: 'saida', label: <span className="inline-flex items-center gap-1.5"><ArrowDownRight className="h-4 w-4" /> Saída</span>, activeClass: 'bg-surface text-expense shadow-[var(--shadow)]' },
-            { value: 'entrada', label: <span className="inline-flex items-center gap-1.5"><ArrowUpRight className="h-4 w-4" /> Entrada</span>, activeClass: 'bg-surface text-income shadow-[var(--shadow)]' },
-          ]}
-        />
+    <form onSubmit={handleSubmit} className="space-y-5 pb-2">
+      <Segmented
+        value={type}
+        onChange={changeType}
+        options={[
+          { value: 'saida', label: <span className="inline-flex items-center gap-1.5"><ArrowDownRight className="h-4 w-4" /> Saída</span>, activeClass: 'bg-surface text-expense shadow-[var(--shadow)]' },
+          { value: 'entrada', label: <span className="inline-flex items-center gap-1.5"><ArrowUpRight className="h-4 w-4" /> Entrada</span>, activeClass: 'bg-surface text-income shadow-[var(--shadow)]' },
+        ]}
+      />
 
-        <label className="block text-center">
-          <span className="text-xs text-muted">Valor</span>
-          <div className={cx('mt-1 flex items-baseline justify-center gap-2 font-semibold tracking-tight', isIn ? 'text-income' : 'text-expense')}>
-            <span className="text-2xl opacity-70">R$</span>
-            <input
-              autoFocus inputMode="decimal" placeholder="0,00" value={amount}
-              onChange={(e) => setAmount(e.target.value.replace(/[^\d.,]/g, ''))}
-              className="w-48 bg-transparent text-center text-5xl tabular focus:outline-none placeholder:opacity-30"
-              style={{ fontSize: '3rem' }}
-            />
-          </div>
-        </label>
-
-        <input value={description} onChange={(e) => changeDescription(e.target.value)} placeholder={isIn ? 'Ex.: salário, freela…' : 'Ex.: mercado, uber, pizza…'} className={inputClass} maxLength={200} />
-
-        <div>
-          <p className="mb-2 text-xs text-muted">Categoria {!categoryTouched && description && <span className="text-accent">· sugerida automaticamente</span>}</p>
-          <div className="flex flex-wrap gap-2">
-            {CATEGORIES.map((c) => (
-              <button
-                key={c.name} type="button"
-                onClick={() => { play('tap'); setCategory(c.name); setCategoryTouched(true) }}
-                className={cx(
-                  'inline-flex items-center gap-1.5 rounded-lg border py-1 pl-1 pr-2.5 text-sm transition-all active:scale-95',
-                  category === c.name ? 'border-accent bg-accent/10 text-ink' : 'border-line text-muted hover:text-ink',
-                )}
-              >
-                <CategoryIcon category={c.name} size="sm" />{c.name}
-              </button>
-            ))}
-          </div>
+      <label className="block text-center">
+        <span className="text-xs text-muted">{installments > 1 ? 'Valor total' : 'Valor'}</span>
+        <div className={cx('mt-1 flex items-baseline justify-center gap-2 font-semibold tracking-tight', isIn ? 'text-income' : 'text-expense')}>
+          <span className="text-2xl opacity-70">R$</span>
+          <input
+            autoFocus={!editing} inputMode="decimal" placeholder="0,00" value={amount}
+            onChange={(e) => setAmount(e.target.value.replace(/[^\d.,]/g, ''))}
+            className="w-48 bg-transparent text-center tabular focus:outline-none placeholder:opacity-30"
+            style={{ fontSize: '3rem' }}
+          />
         </div>
-
-        {!isIn && (
-          <div className="rounded-xl border border-line p-3.5 space-y-3">
-            <label className="flex items-center justify-between gap-3 cursor-pointer">
-              <span className="flex items-center gap-2 text-sm"><Users className="h-4 w-4 text-accent" /> Dividir 50% com parceiro</span>
-              <input type="checkbox" checked={split} onChange={(e) => { play('toggle'); setSplit(e.target.checked) }} className="h-5 w-5 accent-[var(--accent)]" />
-            </label>
-            {split && (
-              partners.length ? (
-                <select value={selectedPartner} onChange={(e) => setPartnerId(e.target.value)} className={inputClass}>
-                  {partners.map((p) => <option key={p.partner_id} value={p.partner_id}>{p.partner_email}</option>)}
-                </select>
-              ) : <p className="text-xs text-muted">Nenhum parceiro ainda — adicione na aba Conexões.</p>
-            )}
-          </div>
+        {installments > 1 && Number.isFinite(value) && value > 0 && (
+          <span className="text-xs text-muted">{installments}x de {formatBRL(splitInstallments(value, installments)[1])}</span>
         )}
+      </label>
 
-        {error && <p className="text-sm text-expense">{error}</p>}
+      <input value={description} onChange={(e) => changeDescription(e.target.value)} placeholder={isIn ? 'Ex.: salário, freela…' : 'Ex.: mercado, uber, pizza…'} className={inputClass} maxLength={200} />
 
-        <button type="submit" disabled={saving} className={primaryButton}>
-          {saving ? 'Salvando…' : isIn ? 'Registrar entrada' : 'Registrar saída'}
-        </button>
-      </form>
-    </Sheet>
+      <div className={cx('grid gap-3', !isIn && !editing ? 'grid-cols-2' : 'grid-cols-1')}>
+        <label className="block">
+          <span className="mb-1 block text-xs text-muted">{installments > 1 ? 'Data da 1ª parcela' : 'Data'}</span>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value || todayBR())} className={inputClass} />
+        </label>
+        {!isIn && !editing && (
+          <label className="block">
+            <span className="mb-1 block text-xs text-muted">Parcelas</span>
+            <select value={installments} disabled={split} onChange={(e) => setInstallments(Number(e.target.value))} className={inputClass}>
+              <option value={1}>À vista</option>
+              {Array.from({ length: 23 }, (_, i) => i + 2).map((n) => <option key={n} value={n}>{n}x</option>)}
+            </select>
+          </label>
+        )}
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs text-muted">Categoria {!categoryTouched && description && <span className="text-accent">· sugerida automaticamente</span>}</p>
+        <div className="flex flex-wrap gap-2">
+          {CATEGORIES.map((c) => (
+            <button
+              key={c.name} type="button"
+              onClick={() => { play('tap'); setCategory(c.name); setCategoryTouched(true) }}
+              className={cx(
+                'inline-flex items-center gap-1.5 rounded-lg border py-1 pl-1 pr-2.5 text-sm transition-all active:scale-95',
+                category === c.name ? 'border-accent bg-accent/10 text-ink' : 'border-line text-muted hover:text-ink',
+              )}
+            >
+              <CategoryIcon category={c.name} size="sm" />{c.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {!isIn && !editing && installments === 1 && (
+        <div className="rounded-xl border border-line p-3.5 space-y-3">
+          <label className="flex items-center justify-between gap-3 cursor-pointer">
+            <span className="flex items-center gap-2 text-sm"><Users className="h-4 w-4 text-accent" /> Dividir 50% com parceiro</span>
+            <input type="checkbox" checked={split} onChange={(e) => { play('toggle'); setSplit(e.target.checked) }} className="h-5 w-5 accent-[var(--accent)]" />
+          </label>
+          {split && (
+            partners.length ? (
+              <select value={selectedPartner} onChange={(e) => setPartnerId(e.target.value)} className={inputClass}>
+                {partners.map((p) => <option key={p.partner_id} value={p.partner_id}>{p.partner_email}</option>)}
+              </select>
+            ) : <p className="text-xs text-muted">Nenhum parceiro ainda — adicione na aba Conexões.</p>
+          )}
+          {split && <p className="text-xs text-muted">Despesas divididas usam a data de hoje.</p>}
+        </div>
+      )}
+
+      {error && <p className="text-sm text-expense">{error}</p>}
+
+      <button type="submit" disabled={saving} className={primaryButton}>
+        {saving ? 'Salvando…' : editing ? 'Salvar alterações' : isIn ? 'Registrar entrada' : installments > 1 ? `Registrar ${installments} parcelas` : 'Registrar saída'}
+      </button>
+    </form>
   )
 }

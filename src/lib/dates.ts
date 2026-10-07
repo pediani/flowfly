@@ -12,6 +12,11 @@ export function formatDateBR(isoDate: string): string {
   return `${d}/${m}/${y}`
 }
 
+/** Timestamp → data YYYY-MM-DD no horário de Brasília */
+export function dateOfIsoBR(iso: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE }).format(new Date(iso))
+}
+
 /** Timestamp → "14:32" no horário de Brasília */
 export function formatTimeBR(iso: string): string {
   return new Intl.DateTimeFormat('pt-BR', { timeZone: TIMEZONE, hour: '2-digit', minute: '2-digit' }).format(new Date(iso))

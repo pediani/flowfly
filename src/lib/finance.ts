@@ -67,9 +67,11 @@ export function summarize(txs: Tx[], key: string): MonthSummary {
   return s
 }
 
-/** Saldo de todos os tempos (entradas − saídas). */
-export function overallBalance(txs: Tx[]): number {
-  return txs.reduce((acc, t) => acc + (t.type === 'entrada' ? n(t.amount) : t.type === 'saida' ? -n(t.amount) : 0), 0)
+const net = (t: Tx) => (t.type === 'entrada' ? n(t.amount) : t.type === 'saida' ? -n(t.amount) : 0)
+
+/** Saldo de todos os tempos até hoje (parcelas futuras não entram). */
+export function overallBalance(txs: Tx[], upTo = todayBR()): number {
+  return txs.reduce((acc, t) => acc + (t.date <= upTo ? net(t) : 0), 0)
 }
 
 export function pendingDebts(txs: Tx[]): number {
@@ -77,8 +79,9 @@ export function pendingDebts(txs: Tx[]): number {
 }
 
 /** Consolidado por mês, do mais recente para o mais antigo (só meses com lançamentos). */
-export function monthlyHistory(txs: Tx[], limit = 12): MonthSummary[] {
-  const keys = [...new Set(txs.map((t) => monthKeyOf(t.date)))].sort().reverse().slice(0, limit)
+export function monthlyHistory(txs: Tx[], limit = 12, today = todayBR()): MonthSummary[] {
+  const cur = monthKeyOf(today)
+  const keys = [...new Set(txs.map((t) => monthKeyOf(t.date)))].filter((k) => k <= cur).sort().reverse().slice(0, limit)
   return keys.map((k) => summarize(txs, k))
 }
 
@@ -124,7 +127,7 @@ function avgVariableSpending(txs: Tx[], fromKey: string, recurring: Recurring[],
   return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null
 }
 
-function recurringDay(r: Recurring, key: string): number {
+export function recurringDay(r: Recurring, key: string): number {
   return Math.min(Math.max(1, n(r.day_of_month)), daysInMonth(key))
 }
 
@@ -196,6 +199,7 @@ export function monthProjection(txs: Tx[], recurring: Recurring[], key: string, 
       p.realizado = round2(acc)
       if (d === todayDay && todayDay < total) p.projetado = p.realizado
     } else {
+      acc += netByDay[d] // lançamentos já agendados (ex.: parcelas futuras)
       for (const r of remainingRecurring) if (recurringDay(r, key) === d) acc += r.type === 'entrada' ? n(r.amount) : -n(r.amount)
       p.projetado = round2(acc)
     }
@@ -229,16 +233,16 @@ export type FuturePoint = {
   realizado: boolean
 }
 
-/** Mês atual (projetado) + próximos meses: só contas fixas e parcelas (compromissos conhecidos). */
+/** Mês atual (projetado) + próximos meses: contas fixas, parcelas já lançadas e parcelamentos (compromissos conhecidos). */
 export function futureProjection(
   txs: Tx[], recurring: Recurring[], installments: Installment[], months = 6, today = todayBR()
 ): FuturePoint[] {
   const cur = monthKeyOf(today)
   const mp = monthProjection(txs, recurring, cur, today)
-  const s = summarize(txs, cur)
+  const realizedToday = txsOfMonth(txs, cur).reduce((a, t) => a + (t.date <= today ? net(t) : 0), 0)
 
   // Saldo acumulado: tudo até hoje + o que ainda falta acontecer no mês atual
-  let acumulado = overallBalance(txs) + (mp.projectedSaldo - s.saldo)
+  let acumulado = overallBalance(txs, today) + (mp.projectedSaldo - realizedToday)
   const out: FuturePoint[] = [{
     key: cur, label: monthLabel(cur, 'short'),
     entradas: mp.projectedEntradas, saidas: mp.projectedSaidas, saldoMes: mp.projectedSaldo,
@@ -249,8 +253,9 @@ export function futureProjection(
   const recOut = recurring.filter((r) => r.type === 'saida').reduce((a, r) => a + n(r.amount), 0)
   for (let i = 1; i < months; i++) {
     const k = addMonths(cur, i)
-    const entradas = recIn
-    const saidas = recOut + installmentsDue(installments, k)
+    const scheduled = txsOfMonth(txs, k)
+    const entradas = recIn + scheduled.filter((t) => t.type === 'entrada').reduce((a, t) => a + n(t.amount), 0)
+    const saidas = recOut + installmentsDue(installments, k) + scheduled.filter((t) => t.type === 'saida').reduce((a, t) => a + n(t.amount), 0)
     acumulado += entradas - saidas
     out.push({
       key: k, label: monthLabel(k, 'short'),

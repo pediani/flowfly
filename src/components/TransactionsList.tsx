@@ -1,9 +1,10 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Search, SearchX } from 'lucide-react'
+import { Download, Search, SearchX } from 'lucide-react'
 import { normalize } from '../lib/categories'
-import { dayLabelBR, monthLabel } from '../lib/dates'
+import { dayLabelBR, formatDateBR, formatTimeBR, monthLabel } from '../lib/dates'
+import { play } from '../lib/sounds'
 import { formatBRL } from '../lib/format'
 import type { Tx } from '../lib/finance'
 import { TransactionItem } from './TransactionItem'
@@ -11,11 +12,34 @@ import { Card, Chip, EmptyState, inputClass } from './ui'
 
 type Filter = 'all' | 'entrada' | 'saida' | 'a_pagar' | 'telegram'
 
-export default function TransactionsList({ txs, monthKey, onDelete, onPay }: {
+const TYPE_LABEL: Record<string, string> = { entrada: 'Entrada', saida: 'Saída', a_pagar: 'A pagar' }
+
+/** CSV com ";" e vírgula decimal, que o Excel em português abre direto */
+function exportCsv(rows: Tx[], name: string) {
+  const esc = (v: string) => `"${v.replace(/"/g, '""')}"`
+  const lines = [['Data', 'Hora', 'Tipo', 'Descrição', 'Categoria', 'Valor', 'Origem'].join(';')]
+  for (const t of rows) {
+    const signed = (t.type === 'entrada' ? 1 : -1) * Number(t.amount)
+    lines.push([
+      formatDateBR(t.date), t.created_at ? formatTimeBR(t.created_at) : '', TYPE_LABEL[t.type] || t.type,
+      esc(t.description), esc(t.category || 'Geral'), signed.toFixed(2).replace('.', ','), t.source === 'telegram' ? 'Telegram' : 'Painel',
+    ].join(';'))
+  }
+  const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `flowfly-${name}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export default function TransactionsList({ txs, monthKey, onDelete, onPay, onEdit }: {
   txs: Tx[]
   monthKey: string
   onDelete: (t: Tx) => void
   onPay: (t: Tx) => void
+  onEdit: (t: Tx) => void
 }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
@@ -54,7 +78,16 @@ export default function TransactionsList({ txs, monthKey, onDelete, onPay }: {
           <Chip active={!allMonths} onClick={() => setAllMonths(false)}>{monthLabel(monthKey)}</Chip>
           <Chip active={allMonths} onClick={() => setAllMonths(true)}>Todos os meses</Chip>
         </div>
-        <p className="text-xs text-muted">{count} lançamento{count === 1 ? '' : 's'}</p>
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted">{count} lançamento{count === 1 ? '' : 's'}</p>
+          <button
+            disabled={!count}
+            onClick={() => { play('success'); exportCsv(groups.flatMap((g) => g.items), allMonths ? 'todos' : monthKey) }}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium hover:bg-surface-2 disabled:opacity-40"
+          >
+            <Download className="h-3.5 w-3.5" /> Exportar Excel (CSV)
+          </button>
+        </div>
       </Card>
 
       {groups.length ? groups.map((g, gi) => (
@@ -64,7 +97,7 @@ export default function TransactionsList({ txs, monthKey, onDelete, onPay }: {
             <span className={`tabular text-xs ${g.net >= 0 ? 'text-income' : 'text-expense'}`}>{g.net >= 0 ? '+' : '−'} {formatBRL(Math.abs(g.net))}</span>
           </div>
           <ul className="divide-y divide-line px-5 pb-1">
-            {g.items.map((t) => <TransactionItem key={t.id} t={t} onDelete={onDelete} onPay={onPay} />)}
+            {g.items.map((t) => <TransactionItem key={t.id} t={t} onDelete={onDelete} onPay={onPay} onEdit={onEdit} />)}
           </ul>
         </Card>
       )) : (

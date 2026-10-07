@@ -1,19 +1,21 @@
 'use client'
 
 import { useState } from 'react'
-import { CalendarClock, CalendarX, Trash2 } from 'lucide-react'
+import { CalendarClock, CalendarX, CircleCheck, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { formatBRL } from '../lib/format'
 import { pendingRecurring, type Recurring, type Tx } from '../lib/finance'
-import { currentMonthKey } from '../lib/dates'
+import { currentMonthKey, todayBR } from '../lib/dates'
+import { detectCategory } from '../lib/categories'
 import { play } from '../lib/sounds'
 import { Card, CardHeader, EmptyState, Segmented, cx, inputClass, primaryButton } from './ui'
 
-export default function RecurringPanel({ userId, recurring, txs, onChange }: {
+export default function RecurringPanel({ userId, recurring, txs, onChange, onPaid }: {
   userId: string
   recurring: Recurring[]
   txs: Tx[]
   onChange: () => void
+  onPaid: () => void
 }) {
   const [type, setType] = useState<'saida' | 'entrada'>('saida')
   const [amount, setAmount] = useState('')
@@ -38,6 +40,16 @@ export default function RecurringPanel({ userId, recurring, txs, onChange }: {
     play('success')
     setAmount(''); setDescription(''); setDay('5')
     onChange()
+  }
+
+  async function handlePaid(r: Recurring) {
+    const { error } = await supabase.from('transactions').insert({
+      user_id: userId, amount: r.amount, type: r.type, description: r.description, source: 'web', is_split: false,
+      category: detectCategory(r.description, r.type === 'entrada' ? 'entrada' : 'saida'), date: todayBR(),
+    })
+    if (error) { play('error'); alert(error.message); return }
+    play(r.type === 'entrada' ? 'income' : 'expense')
+    onPaid()
   }
 
   async function handleDelete(r: Recurring) {
@@ -80,7 +92,13 @@ export default function RecurringPanel({ userId, recurring, txs, onChange }: {
                   {r.type === 'entrada' ? 'Renda fixa' : 'Gasto fixo'} · {pendingIds.has(r.id) ? 'ainda não lançado este mês' : <span className="text-income">lançado este mês</span>}
                 </p>
               </div>
-              <span className={cx('tabular font-semibold', r.type === 'entrada' ? 'text-income' : 'text-expense')}>{formatBRL(Number(r.amount))}</span>
+              <span className={cx('tabular text-sm font-semibold', r.type === 'entrada' ? 'text-income' : 'text-expense')}>{formatBRL(Number(r.amount))}</span>
+              {pendingIds.has(r.id) && (
+                <button onClick={() => handlePaid(r)} title={r.type === 'entrada' ? 'Recebi — lançar hoje' : 'Paguei — lançar hoje'}
+                  className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs font-medium text-ink hover:bg-surface-2 active:scale-95">
+                  <CircleCheck className="h-3.5 w-3.5 text-income" /> {r.type === 'entrada' ? 'Recebi' : 'Paguei'}
+                </button>
+              )}
               <button onClick={() => handleDelete(r)} title="Excluir" className="rounded-lg p-1.5 text-muted hover:text-expense hover:bg-surface-2"><Trash2 className="h-4 w-4" /></button>
             </li>
           )) : <EmptyState icon={CalendarX} title="Nenhuma conta fixa" text="Cadastre aluguel, salário e assinaturas para melhorar a projeção." />}

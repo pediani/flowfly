@@ -1,16 +1,17 @@
 'use client'
 
-import { CheckCircle2, Send, Trash2 } from 'lucide-react'
-import { formatDateBR, relativeTimeBR } from '../lib/dates'
+import { CheckCircle2, Pencil, Send, Trash2 } from 'lucide-react'
+import { formatDateBR, relativeTimeBR, todayBR } from '../lib/dates'
 import { formatBRL } from '../lib/format'
 import type { Tx } from '../lib/finance'
 import { CategoryIcon } from './CategoryIcon'
 import { cx } from './ui'
 
-export function TransactionItem({ t, onDelete, onPay, delay = 0 }: {
+export function TransactionItem({ t, onDelete, onPay, onEdit, delay = 0 }: {
   t: Tx
   onDelete?: (t: Tx) => void
   onPay?: (t: Tx) => void
+  onEdit?: (t: Tx) => void
   delay?: number
 }) {
   const pending = t.type === 'a_pagar'
@@ -32,6 +33,7 @@ export function TransactionItem({ t, onDelete, onPay, delay = 0 }: {
             </span>
           )}
           {t.is_split && <span className="rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">dividido</span>}
+          {t.date > todayBR() && <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted">agendado {formatDateBR(t.date).slice(0, 5)}</span>}
           {pending && <span className="rounded-md bg-warn/10 px-1.5 py-0.5 text-[10px] font-medium text-warn">pendente</span>}
         </p>
       </div>
@@ -43,6 +45,11 @@ export function TransactionItem({ t, onDelete, onPay, delay = 0 }: {
           {pending && onPay && (
             <button onClick={() => onPay(t)} title="Marcar como pago" className="rounded-lg p-1 text-income hover:bg-surface-2">
               <CheckCircle2 className="h-4 w-4" />
+            </button>
+          )}
+          {onEdit && !pending && (
+            <button onClick={() => onEdit(t)} title="Editar" className="rounded-lg p-1 text-muted hover:text-ink hover:bg-surface-2">
+              <Pencil className="h-4 w-4" />
             </button>
           )}
           {onDelete && (
