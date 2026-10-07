@@ -47,25 +47,22 @@ export function computeBill(txs: PluggyTx[], bills: PluggyBill[], closeHint: str
     closedDueDate = closedDue ? day(last.dueDate) : null
   }
 
-  const unbilled = txs.filter((t) => !t.creditCardMetadata?.billId)
-
-  // 1) Melhor caso (Open Finance): previsão de fatura em cada transação
-  const forecasts = unbilled.map((t) => t.creditCardMetadata?.billForecastDate).filter(Boolean) as string[]
-  if (forecasts.length) {
-    const period = forecasts.sort()[0]
-    const open = sumTxs(unbilled.filter((t) => t.creditCardMetadata?.billForecastDate === period || !t.creditCardMetadata?.billForecastDate && day(t.date)! <= today))
-    return { open, openCloses: lastClose ? addMonthsDate(lastClose, 1) : null, closedDue, closedDueDate, method: `previsão ${period}` }
+  // Fatura aberta = tudo que ainda não entrou numa fatura fechada (sem billId), exceto pagamentos.
+  // Parcelas futuras também vêm "sem fatura": de cada compra parcelada entra só a próxima parcela.
+  const unbilled = txs.filter((t) => !t.creditCardMetadata?.billId && !isBillPayment(t))
+  const nextInstallment = new Map<string, PluggyTx>()
+  const single: PluggyTx[] = []
+  for (const t of unbilled) {
+    const m = t.creditCardMetadata
+    if (m?.totalInstallments && m.totalInstallments > 1) {
+      const key = `${(t.description || '').toLowerCase().replace(/\s+/g, ' ').trim()}|${m.totalInstallments}|${Math.abs(Number(t.amount)).toFixed(2)}`
+      const cur = nextInstallment.get(key)
+      if (!cur || (m.installmentNumber || 99) < (cur.creditCardMetadata?.installmentNumber || 99)) nextInstallment.set(key, t)
+    } else if (day(t.date)! <= today) {
+      single.push(t)
+    }
   }
-
-  // 2) Pelo ciclo: depois do último fechamento até o próximo
-  if (lastClose) {
-    let close = lastClose
-    while (addMonthsDate(close, 1) < today) close = addMonthsDate(close, 1)
-    const next = addMonthsDate(close, 1)
-    const open = sumTxs(unbilled.filter((t) => day(t.date)! > close && day(t.date)! <= next))
-    return { open, openCloses: next, closedDue, closedDueDate, method: last?.billClosingDate ? 'ciclo (fechamento real)' : 'ciclo (fechamento estimado)' }
-  }
-
-  // 3) Sem datas: não faturadas até hoje
-  return { open: sumTxs(unbilled.filter((t) => day(t.date)! <= today)), openCloses: null, closedDue, closedDueDate, method: 'estimado' }
+  const open = sumTxs([...single, ...nextInstallment.values()])
+  const nextClose = lastClose ? (() => { let c = lastClose; while (c < today) c = addMonthsDate(c, 1); return c })() : null
+  return { open, openCloses: nextClose, closedDue, closedDueDate, method: 'não faturadas' }
 }

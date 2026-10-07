@@ -99,9 +99,15 @@ export type PluggyBill = {
   payments?: { amount: number; paymentDate?: string }[] | null
 }
 
+/** Todas as faturas fechadas do cartão (a API devolve da mais antiga para a mais nova, paginado). */
 export async function listBills(accountId: string): Promise<PluggyBill[]> {
-  const r = await call<{ results: PluggyBill[] }>(`/bills?accountId=${encodeURIComponent(accountId)}&pageSize=12`)
-  return r.results || []
+  const out: PluggyBill[] = []
+  for (let page = 1; page <= 10; page++) {
+    const r = await call<{ results: PluggyBill[]; totalPages?: number }>(`/bills?accountId=${encodeURIComponent(accountId)}&pageSize=100&page=${page}`)
+    out.push(...(r.results || []))
+    if (!r.totalPages || page >= r.totalPages) break
+  }
+  return out
 }
 
 /** Garante um webhook de "transactions/created" apontando para o FlowFly. */
