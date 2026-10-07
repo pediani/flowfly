@@ -48,21 +48,33 @@ export function computeBill(txs: PluggyTx[], bills: PluggyBill[], closeHint: str
   }
 
   // Fatura aberta = tudo que ainda não entrou numa fatura fechada (sem billId), exceto pagamentos.
-  // Parcelas futuras também vêm "sem fatura": de cada compra parcelada entra só a próxima parcela.
+  // Parcelas futuras também vêm "sem fatura": entram só as previstas até a fatura aberta.
   const unbilled = txs.filter((t) => !t.creditCardMetadata?.billId && !isBillPayment(t))
-  const nextInstallment = new Map<string, PluggyTx>()
-  const single: PluggyTx[] = []
-  for (const t of unbilled) {
-    const m = t.creditCardMetadata
-    if (m?.totalInstallments && m.totalInstallments > 1) {
+  const validPeriod = (f?: string | null) => (f && /^20\d\d-(0[1-9]|1[0-2])$/.test(f) ? f : null)
+  const isInst = (t: PluggyTx) => (t.creditCardMetadata?.totalInstallments || 0) > 1
+  const single = unbilled.filter((t) => !isInst(t) && day(t.date)! <= today)
+  const inst = unbilled.filter(isInst)
+
+  // Período da fatura aberta: o mais recente entre as compras à vista; sem elas, o primeiro das parcelas
+  const singlePeriods = single.map((t) => validPeriod(t.creditCardMetadata?.billForecastDate)).filter(Boolean) as string[]
+  const instPeriods = inst.map((t) => validPeriod(t.creditCardMetadata?.billForecastDate)).filter(Boolean) as string[]
+  const period = singlePeriods.sort().pop() || instPeriods.sort()[0] || null
+
+  let installments: PluggyTx[]
+  if (period) {
+    installments = inst.filter((t) => { const f = validPeriod(t.creditCardMetadata?.billForecastDate); return !!f && f <= period })
+  } else {
+    // Sem previsão: de cada compra parcelada, só a próxima parcela
+    const next = new Map<string, PluggyTx>()
+    for (const t of inst) {
+      const m = t.creditCardMetadata!
       const key = `${(t.description || '').toLowerCase().replace(/\s+/g, ' ').trim()}|${m.totalInstallments}|${Math.abs(Number(t.amount)).toFixed(2)}`
-      const cur = nextInstallment.get(key)
-      if (!cur || (m.installmentNumber || 99) < (cur.creditCardMetadata?.installmentNumber || 99)) nextInstallment.set(key, t)
-    } else if (day(t.date)! <= today) {
-      single.push(t)
+      const cur = next.get(key)
+      if (!cur || (m.installmentNumber || 99) < (cur.creditCardMetadata?.installmentNumber || 99)) next.set(key, t)
     }
+    installments = [...next.values()]
   }
-  const open = sumTxs([...single, ...nextInstallment.values()])
+  const open = sumTxs([...single, ...installments])
   const nextClose = lastClose ? (() => { let c = lastClose; while (c < today) c = addMonthsDate(c, 1); return c })() : null
-  return { open, openCloses: nextClose, closedDue, closedDueDate, method: 'não faturadas' }
+  return { open, openCloses: nextClose, closedDue, closedDueDate, method: period ? `não faturadas até ${period}` : 'não faturadas' }
 }
