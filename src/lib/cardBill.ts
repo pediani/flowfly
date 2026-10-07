@@ -8,6 +8,7 @@ export type BillInfo = {
   openCloses: string | null   // fechamento previsto da fatura aberta
   closedDue: number           // fatura fechada ainda não vencida e não paga
   closedDueDate: string | null
+  openDue: string | null      // vencimento previsto da fatura aberta
   method: string              // como foi calculado (diagnóstico)
 }
 
@@ -76,5 +77,10 @@ export function computeBill(txs: PluggyTx[], bills: PluggyBill[], closeHint: str
   }
   const open = sumTxs([...single, ...installments])
   const nextClose = lastClose ? (() => { let c = lastClose; while (c < today) c = addMonthsDate(c, 1); return c })() : null
-  return { open, openCloses: nextClose, closedDue, closedDueDate, method: period ? `não faturadas até ${period}` : 'não faturadas' }
+  // Vencimento da fatura aberta: o mês seguinte ao da fechada pendente, ou o próximo vencimento a partir do último conhecido
+  const lastDue = day(last?.dueDate) || day(dueHint)
+  let openDue: string | null = null
+  if (closedDue && closedDueDate) openDue = addMonthsDate(closedDueDate, 1)
+  else if (lastDue) { let d = lastDue; while (d < today) d = addMonthsDate(d, 1); openDue = d }
+  return { open, openCloses: nextClose, closedDue, closedDueDate, openDue, method: period ? `não faturadas até ${period}` : 'não faturadas' }
 }

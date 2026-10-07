@@ -129,6 +129,7 @@ export type BankBalance = {
   openCloses?: string | null
   closedDue?: number
   closedDueDate?: string | null
+  openDue?: string | null  // vencimento previsto da fatura aberta
   usedLimit?: number       // limite usado total (inclui parcelas futuras)
   billMethod?: string
   creditLimit?: number | null

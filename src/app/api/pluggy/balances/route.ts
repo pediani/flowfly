@@ -40,7 +40,7 @@ export async function POST(request: Request) {
           last4: String(a.number || '').replace(/\D/g, '').slice(-4),
           balance: bill ? Math.round((bill.open + bill.closedDue) * 100) / 100 : Number(a.balance || 0),
           ...(bill ? {
-            openBill: bill.open, openCloses: bill.openCloses, closedDue: bill.closedDue, closedDueDate: bill.closedDueDate,
+            openBill: bill.open, openCloses: bill.openCloses, closedDue: bill.closedDue, closedDueDate: bill.closedDueDate, openDue: bill.openDue,
             usedLimit: Math.abs(Number(a.balance || 0)), billMethod: bill.method,
           } : {}),
           creditLimit: a.creditData?.creditLimit ?? null,

@@ -72,7 +72,7 @@ export default function Dashboard(p: Props) {
   return (
     <div className="space-y-4">
       {/* SALDO REAL (bancos conectados) */}
-      {isCurrent && <RealBalanceCard monthResult={s.saldo} monthLabelText={monthLabel(monthKey)} refreshKey={p.settlementKey} />}
+      {isCurrent && <RealBalanceCard txs={txs} recurring={recurring} refreshKey={p.settlementKey} />}
 
       {/* RESULTADO DO MÊS */}
       <Card className="p-5 md:p-6">
