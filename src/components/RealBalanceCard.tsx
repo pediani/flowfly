@@ -40,11 +40,11 @@ export default function RealBalanceCard({ monthResult, monthLabelText, refreshKe
         <div>
           <p className="text-sm text-muted">Disponível de verdade</p>
           <Money value={real} className={cx('mt-1 block text-4xl font-semibold tracking-tight md:text-5xl', real < 0 && 'text-expense')} />
-          <p className="mt-1 text-xs text-muted">Saldo nas contas menos as faturas em aberto{updated ? ` · atualizado ${relativeTimeBR(updated)}` : ''}</p>
+          <p className="mt-1 text-xs text-muted">Saldo nas contas menos as faturas a pagar (sem parcelas futuras){updated ? ` · atualizado ${relativeTimeBR(updated)}` : ''}</p>
         </div>
         <div className="grid grid-cols-3 gap-2 text-xs md:min-w-[420px]">
           <Stat icon={Landmark} label="Nas contas" value={inAccounts} />
-          <Stat icon={CreditCard} label="Faturas em aberto" value={-bills} tone="text-expense" />
+          <Stat icon={CreditCard} label="Faturas a pagar" value={-bills} tone="text-expense" hint="Fatura aberta de cada cartão + fatura fechada que ainda não venceu. Parcelas de meses seguintes não entram." />
           <Stat icon={Wallet} label={`Resultado de ${monthLabelText}`} value={monthResult} tone={monthResult >= 0 ? 'text-income' : 'text-expense'} hint="Entradas − saídas lançadas no mês" />
         </div>
       </div>
@@ -63,12 +63,17 @@ export default function RealBalanceCard({ monthResult, monthLabelText, refreshKe
                 <p className="truncate text-sm font-medium">{a.institution} · {a.name}{a.last4 ? ` ·${a.last4}` : ''}</p>
                 <p className="text-[11px] text-muted">
                   {a.type === 'Cartão'
-                    ? <>Fatura atual{a.dueDate ? ` · vence ${formatDateBR(a.dueDate)}` : ''}{a.available != null ? ` · limite livre ${formatBRL(a.available)}` : ''}</>
+                    ? <>
+                        Fatura aberta{a.openCloses ? ` (fecha ${formatDateBR(a.openCloses).slice(0, 5)})` : ''}: {formatBRL(a.openBill ?? a.balance)}
+                        {a.closedDue ? <> · fechada a pagar {formatBRL(a.closedDue)}{a.closedDueDate ? ` (vence ${formatDateBR(a.closedDueDate).slice(0, 5)})` : ''}</> : null}
+                        {a.usedLimit != null ? <> · limite usado total {formatBRL(a.usedLimit)} <span title="Inclui todas as parcelas futuras">ⓘ</span></> : null}
+                        {a.billMethod === 'estimado' ? ' · estimado (últimos 30 dias)' : ''}
+                      </>
                     : 'Saldo disponível'}
                 </p>
               </div>
               <span className={cx('shrink-0 whitespace-nowrap tabular text-sm font-semibold', a.type === 'Cartão' ? 'text-expense' : a.balance < 0 ? 'text-expense' : 'text-ink')}>
-                {a.type === 'Cartão' ? '−' : ''} {formatBRL(Math.abs(a.balance))}
+                {a.type === 'Cartão' || a.balance < 0 ? '−' : ''} {formatBRL(Math.abs(a.balance))}
               </span>
             </div>
           ))}

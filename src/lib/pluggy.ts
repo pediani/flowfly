@@ -98,7 +98,13 @@ export type BankBalance = {
   type: 'Conta' | 'Cartão'
   name: string
   last4: string
-  balance: number          // conta: saldo disponível · cartão: fatura atual
+  balance: number          // conta: saldo disponível · cartão: fatura aberta + fatura fechada a vencer
+  openBill?: number
+  openCloses?: string
+  closedDue?: number
+  closedDueDate?: string | null
+  usedLimit?: number       // limite usado total (inclui parcelas futuras)
+  billMethod?: 'fechamento' | 'estimado'
   creditLimit?: number | null
   available?: number | null
   dueDate?: string | null
