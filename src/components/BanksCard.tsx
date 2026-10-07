@@ -32,6 +32,7 @@ export default function BanksCard({ onSynced }: { onSynced: () => void }) {
   const [accounts, setAccounts] = useState<Record<string, { type: string; name: string; last4: string }[]>>({})
   const [renaming, setRenaming] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
+  const [diag, setDiag] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('bank_connections').select('id, item_id, institution, last_sync_at, status').order('created_at')
@@ -145,7 +146,22 @@ export default function BanksCard({ onSynced }: { onSynced: () => void }) {
         </form>
         {msg && <p className={cx('text-xs', msg.ok ? 'text-income' : 'text-expense')}>{msg.text}</p>}
 
-        <button onClick={() => setShowHelp(!showHelp)} className="text-xs font-medium text-accent">{showHelp ? 'Ocultar' : 'Como obter o Item ID?'}</button>
+        <div className="flex flex-wrap gap-3">
+          <button onClick={() => setShowHelp(!showHelp)} className="text-xs font-medium text-accent">{showHelp ? 'Ocultar' : 'Como obter o Item ID?'}</button>
+          {conns.length > 0 && (
+            <button
+              onClick={async () => {
+                setDiag('Carregando…')
+                const { json } = await authed('/api/pluggy/balances?debug=1')
+                setDiag(JSON.stringify(json.diag ?? json, null, 1))
+              }}
+              className="text-xs text-muted hover:text-ink"
+            >
+              Diagnóstico das faturas
+            </button>
+          )}
+        </div>
+        {diag && <pre id="ff-diag" className="max-h-80 overflow-auto rounded-lg bg-surface-2 p-3 text-[10px] leading-snug">{diag}</pre>}
         {showHelp && (
           <ol className="list-decimal space-y-1.5 pl-5 text-xs text-muted animate-fade-in">
             <li>Em <a className="text-accent" href="https://meu.pluggy.ai" target="_blank" rel="noreferrer">meu.pluggy.ai <ExternalLink className="inline h-3 w-3" /></a>, conecte seus bancos pelo Open Finance.</li>

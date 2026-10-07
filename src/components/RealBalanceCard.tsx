@@ -67,7 +67,7 @@ export default function RealBalanceCard({ monthResult, monthLabelText, refreshKe
                         Fatura aberta{a.openCloses ? ` (fecha ${formatDateBR(a.openCloses).slice(0, 5)})` : ''}: {formatBRL(a.openBill ?? a.balance)}
                         {a.closedDue ? <> · fechada a pagar {formatBRL(a.closedDue)}{a.closedDueDate ? ` (vence ${formatDateBR(a.closedDueDate).slice(0, 5)})` : ''}</> : null}
                         {a.usedLimit != null ? <> · limite usado total {formatBRL(a.usedLimit)} <span title="Inclui todas as parcelas futuras">ⓘ</span></> : null}
-                        {a.billMethod === 'estimado' ? ' · estimado (últimos 30 dias)' : ''}
+                        {a.billMethod === 'estimado' ? ' · estimado' : ''}
                       </>
                     : 'Saldo disponível'}
                 </p>

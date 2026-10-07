@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { adminDb } from '../../../../lib/botData'
-import { listAccounts, listTransactions, pluggyEnabled, type BankBalance } from '../../../../lib/pluggy'
+import { listAccounts, listBills, listTransactions, pluggyEnabled, type BankBalance } from '../../../../lib/pluggy'
 import { computeBill } from '../../../../lib/cardBill'
 import { addDays, todayBR } from '../../../../lib/dates'
 import { userFromRequest } from '../../../../lib/serverAuth'
@@ -14,6 +14,8 @@ export async function POST(request: Request) {
   const userId = await userFromRequest(request)
   if (!userId) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
+  const debug = new URL(request.url).searchParams.get('debug') === '1'
+  const diag: unknown[] = []
   const { data: conns } = await adminDb.from('bank_connections').select('item_id, institution').eq('user_id', userId)
   const accounts: BankBalance[] = []
   const errors: string[] = []
@@ -24,8 +26,12 @@ export async function POST(request: Request) {
         let bill: ReturnType<typeof computeBill> | null = null
         if (card) {
           // Fatura = compras/parcelas entre o último fechamento e o próximo (e a fechada, se ainda não venceu)
-          const txs = await listTransactions(a.id, { dateFrom: addDays(todayBR(), -75) })
-          bill = computeBill(txs, a.creditData?.balanceCloseDate, a.creditData?.balanceDueDate, todayBR())
+          const [txs, bills] = await Promise.all([
+            listTransactions(a.id, { dateFrom: addDays(todayBR(), -75) }),
+            listBills(a.id).catch(() => []),
+          ])
+          bill = computeBill(txs, bills, a.creditData?.balanceCloseDate, a.creditData?.balanceDueDate, todayBR())
+          if (debug) diag.push(diagnose(a.marketingName || a.name || a.id, txs, bills, bill))
         }
         accounts.push({
           institution: c.institution || 'Banco',
@@ -50,5 +56,22 @@ export async function POST(request: Request) {
     }
   }))
   accounts.sort((x, y) => x.institution.localeCompare(y.institution) || x.type.localeCompare(y.type))
-  return NextResponse.json({ accounts, errors })
+  return NextResponse.json(debug ? { accounts, errors, diag } : { accounts, errors })
+}
+
+/** Diagnóstico (só com ?debug=1): resumo das transações e faturas de um cartão */
+function diagnose(name: string, txs: import('../../../../lib/pluggy').PluggyTx[], bills: import('../../../../lib/pluggy').PluggyBill[], bill: ReturnType<typeof computeBill>) {
+  const unbilled = txs.filter((t) => !t.creditCardMetadata?.billId)
+  const byForecast: Record<string, number> = {}
+  for (const t of unbilled) {
+    const k = t.creditCardMetadata?.billForecastDate || 'sem previsão'
+    byForecast[k] = Math.round(((byForecast[k] || 0) + (t.type === 'CREDIT' ? -1 : 1) * Math.abs(Number(t.amount))) * 100) / 100
+  }
+  return {
+    name, computed: bill,
+    bills: bills.slice(-3).map((b) => ({ close: b.billClosingDate, due: b.dueDate, total: b.totalAmount, paid: (b.payments || []).reduce((s, p) => s + Number(p.amount || 0), 0) })),
+    txCount: txs.length, unbilledCount: unbilled.length,
+    unbilledByForecast: byForecast,
+    sample: unbilled.slice(0, 40).map((t) => [t.date.slice(0, 10), t.type === 'CREDIT' ? -Math.abs(t.amount) : Math.abs(t.amount), (t.description || '').slice(0, 18), t.status, t.creditCardMetadata?.billForecastDate || '', t.operationType || '', t.creditCardMetadata?.installmentNumber ? `${t.creditCardMetadata.installmentNumber}/${t.creditCardMetadata.totalInstallments}` : '']),
+  }
 }

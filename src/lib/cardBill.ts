@@ -1,59 +1,71 @@
-// Fatura do cartão a partir das transações (a Pluggy informa no "balance" o limite usado total,
-// que inclui todas as parcelas futuras — não serve como "fatura em aberto").
+// Fatura do cartão. O "balance" da Pluggy no cartão é o limite usado total (inclui parcelas futuras),
+// então a fatura é calculada pelas transações + faturas fechadas (bills).
 import { addDays } from './dates'
-import type { PluggyTx } from './pluggy'
+import type { PluggyBill, PluggyTx } from './pluggy'
 
 export type BillInfo = {
-  open: number            // fatura atual (aberta), até o próximo fechamento
-  openCloses: string      // data em que a fatura aberta fecha
-  closedDue: number       // fatura já fechada que ainda não venceu (0 se já venceu/foi paga)
+  open: number                // fatura aberta (atual)
+  openCloses: string | null   // fechamento previsto da fatura aberta
+  closedDue: number           // fatura fechada ainda não vencida e não paga
   closedDueDate: string | null
-  method: 'fechamento' | 'estimado'
+  method: string              // como foi calculado (diagnóstico)
 }
 
-function addMonthsDate(iso: string, n: number): string {
+export function addMonthsDate(iso: string, n: number): string {
   const [y, m, d] = iso.split('-').map(Number)
   const t = new Date(Date.UTC(y, m - 1 + n, 1))
   const last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate()
   return new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), Math.min(d, last))).toISOString().slice(0, 10)
 }
 
-const isPayment = (t: PluggyTx) => t.type === 'CREDIT' && /pagamento|pgto|pagto/i.test(`${t.description} ${t.descriptionRaw || ''}`)
+export const isBillPayment = (t: PluggyTx) =>
+  t.operationType === 'PAGAMENTO_FATURA' || (t.type === 'CREDIT' && /pagamento|pgto|pagto/i.test(`${t.description} ${t.descriptionRaw || ''}`))
 
-/** Soma do período (from, to]: compras somam, estornos subtraem, pagamentos de fatura ficam de fora. */
-function sumWindow(txs: PluggyTx[], from: string, to: string): number {
+/** Compras somam, estornos/créditos subtraem, pagamentos de fatura ficam de fora. */
+export function sumTxs(txs: PluggyTx[]): number {
   let total = 0
   for (const t of txs) {
-    const d = t.date.slice(0, 10)
-    if (d <= from || d > to || isPayment(t)) continue
+    if (isBillPayment(t)) continue
     total += t.type === 'CREDIT' ? -Math.abs(Number(t.amount)) : Math.abs(Number(t.amount))
   }
   return Math.round(total * 100) / 100
 }
 
-export function computeBill(txs: PluggyTx[], closeDate: string | null | undefined, dueDate: string | null | undefined, today: string): BillInfo {
-  // Data de fechamento: a informada, ou ~7 dias antes do vencimento
-  let close = closeDate?.slice(0, 10) || (dueDate ? addDays(dueDate.slice(0, 10), -7) : null)
-  let due = dueDate?.slice(0, 10) || (close ? addDays(close, 7) : null)
+const day = (s?: string | null) => (s ? s.slice(0, 10) : null)
 
-  if (!close) {
-    // Sem datas: estimativa com os últimos 30 dias
-    const from = addDays(today, -30)
-    return { open: sumWindow(txs, from, today), openCloses: today, closedDue: 0, closedDueDate: null, method: 'estimado' }
-  }
-  // Dados podem estar defasados: avança mês a mês até o próximo fechamento ser hoje ou depois
-  while (addMonthsDate(close, 1) < today) { close = addMonthsDate(close, 1); if (due) due = addMonthsDate(due, 1) }
-  // Se o "fechamento" informado ainda não chegou, ele é o próximo fechamento
-  if (close >= today) { close = addMonthsDate(close, -1); if (due) due = addMonthsDate(due, -1) }
+export function computeBill(txs: PluggyTx[], bills: PluggyBill[], closeHint: string | null | undefined, dueHint: string | null | undefined, today: string): BillInfo {
+  const sorted = [...bills].sort((a, b) => (day(a.billClosingDate) || day(a.dueDate)!).localeCompare(day(b.billClosingDate) || day(b.dueDate)!))
+  const last = sorted[sorted.length - 1]
+  const lastClose = day(last?.billClosingDate) || (last ? addDays(day(last.dueDate)!, -7) : day(closeHint) || (dueHint ? addDays(day(dueHint)!, -7) : null))
 
-  const nextClose = addMonthsDate(close, 1)
-  const open = sumWindow(txs, close, nextClose)
-
-  // Fatura fechada ainda não vencida e sem pagamento registrado depois do fechamento
+  // Fatura fechada que ainda não venceu: total − pagamentos já feitos
   let closedDue = 0
-  if (due && due >= today) {
-    const paid = txs.some((t) => isPayment(t) && t.date.slice(0, 10) > close!)
-    if (!paid) closedDue = sumWindow(txs, addMonthsDate(close, -1), close)
+  let closedDueDate: string | null = null
+  if (last && day(last.dueDate)! >= today) {
+    const paid = (last.payments || []).reduce((s, p) => s + Number(p.amount || 0), 0)
+    closedDue = Math.max(0, Math.round((Number(last.totalAmount) - paid) * 100) / 100)
+    closedDueDate = closedDue ? day(last.dueDate) : null
   }
-  return { open, openCloses: nextClose, closedDue, closedDueDate: closedDue ? due : null, method: 'fechamento' }
+
+  const unbilled = txs.filter((t) => !t.creditCardMetadata?.billId)
+
+  // 1) Melhor caso (Open Finance): previsão de fatura em cada transação
+  const forecasts = unbilled.map((t) => t.creditCardMetadata?.billForecastDate).filter(Boolean) as string[]
+  if (forecasts.length) {
+    const period = forecasts.sort()[0]
+    const open = sumTxs(unbilled.filter((t) => t.creditCardMetadata?.billForecastDate === period || !t.creditCardMetadata?.billForecastDate && day(t.date)! <= today))
+    return { open, openCloses: lastClose ? addMonthsDate(lastClose, 1) : null, closedDue, closedDueDate, method: `previsão ${period}` }
+  }
+
+  // 2) Pelo ciclo: depois do último fechamento até o próximo
+  if (lastClose) {
+    let close = lastClose
+    while (addMonthsDate(close, 1) < today) close = addMonthsDate(close, 1)
+    const next = addMonthsDate(close, 1)
+    const open = sumTxs(unbilled.filter((t) => day(t.date)! > close && day(t.date)! <= next))
+    return { open, openCloses: next, closedDue, closedDueDate, method: last?.billClosingDate ? 'ciclo (fechamento real)' : 'ciclo (fechamento estimado)' }
+  }
+
+  // 3) Sem datas: não faturadas até hoje
+  return { open: sumTxs(unbilled.filter((t) => day(t.date)! <= today)), openCloses: null, closedDue, closedDueDate, method: 'estimado' }
 }

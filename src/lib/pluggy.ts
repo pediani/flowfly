@@ -58,7 +58,14 @@ export type PluggyTx = {
   type: 'DEBIT' | 'CREDIT'
   category?: string | null
   status?: string
-  creditCardMetadata?: { installmentNumber?: number; totalInstallments?: number } | null
+  creditCardMetadata?: {
+    installmentNumber?: number
+    totalInstallments?: number
+    billId?: string | null
+    billForecastDate?: string | null // "YYYY-MM": fatura em que deve cair (Open Finance)
+    purchaseDate?: string | null
+  } | null
+  operationType?: string | null // ex.: 'PAGAMENTO_FATURA', 'ESTORNO'
   merchant?: { name?: string; businessName?: string } | null
 }
 
@@ -84,6 +91,19 @@ export async function listTransactions(accountId: string, f: { dateFrom?: string
   return out
 }
 
+export type PluggyBill = {
+  id: string
+  dueDate: string
+  billClosingDate?: string | null
+  totalAmount: number
+  payments?: { amount: number; paymentDate?: string }[] | null
+}
+
+export async function listBills(accountId: string): Promise<PluggyBill[]> {
+  const r = await call<{ results: PluggyBill[] }>(`/bills?accountId=${encodeURIComponent(accountId)}&pageSize=12`)
+  return r.results || []
+}
+
 /** Garante um webhook de "transactions/created" apontando para o FlowFly. */
 export async function ensureWebhook(url: string, secret: string) {
   const r = await call<{ results?: { url: string; event: string }[] } | { url: string; event: string }[]>('/webhooks')
@@ -100,11 +120,11 @@ export type BankBalance = {
   last4: string
   balance: number          // conta: saldo disponível · cartão: fatura aberta + fatura fechada a vencer
   openBill?: number
-  openCloses?: string
+  openCloses?: string | null
   closedDue?: number
   closedDueDate?: string | null
   usedLimit?: number       // limite usado total (inclui parcelas futuras)
-  billMethod?: 'fechamento' | 'estimado'
+  billMethod?: string
   creditLimit?: number | null
   available?: number | null
   dueDate?: string | null
