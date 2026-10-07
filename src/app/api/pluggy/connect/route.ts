@@ -26,7 +26,7 @@ export async function POST(request: Request) {
   const { data: existing } = await db.from('bank_connections').select('*').eq('item_id', id).maybeSingle()
   if (existing && existing.user_id !== userId) return NextResponse.json({ error: 'Esse banco já está conectado em outra conta.' }, { status: 409 })
   const conn = existing ?? (await db.from('bank_connections')
-    .insert({ user_id: userId, item_id: id, institution: item.connector?.name ?? null, status: item.status })
+    .insert({ user_id: userId, item_id: id, institution: null, status: item.status })
     .select('*').single()).data
   if (!conn) return NextResponse.json({ error: 'Erro ao salvar a conexão.' }, { status: 500 })
 

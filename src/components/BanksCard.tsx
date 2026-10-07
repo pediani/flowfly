@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { ExternalLink, Landmark, RefreshCw, Trash2 } from 'lucide-react'
+import { Check, CreditCard, ExternalLink, Landmark, Pencil, RefreshCw, Trash2, Wallet } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { relativeTimeBR } from '../lib/dates'
 import { play } from '../lib/sounds'
@@ -29,10 +29,17 @@ export default function BanksCard({ onSynced }: { onSynced: () => void }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [showHelp, setShowHelp] = useState(false)
+  const [accounts, setAccounts] = useState<Record<string, { type: string; name: string; last4: string }[]>>({})
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [newName, setNewName] = useState('')
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('bank_connections').select('id, item_id, institution, last_sync_at, status').order('created_at')
     setConns((data as Conn[]) || [])
+    if (data?.length) {
+      const { ok, json } = await authed('/api/pluggy/accounts')
+      if (ok) setAccounts(json)
+    }
   }, [])
 
   useEffect(() => {
@@ -62,6 +69,14 @@ export default function BanksCard({ onSynced }: { onSynced: () => void }) {
     load(); onSynced()
   }
 
+  async function rename(c: Conn) {
+    const { ok, json } = await authed('/api/pluggy/rename', { connectionId: c.id, name: newName })
+    play(ok ? 'success' : 'error')
+    if (!ok) { setMsg({ ok: false, text: json.error || 'Erro ao renomear.' }); return }
+    setRenaming(null)
+    load(); onSynced()
+  }
+
   async function remove(c: Conn) {
     if (!confirm(`Desconectar ${c.institution || 'este banco'}? Os lançamentos já importados continuam no app.`)) return
     await supabase.from('bank_connections').delete().eq('id', c.id)
@@ -86,13 +101,36 @@ export default function BanksCard({ onSynced }: { onSynced: () => void }) {
         {conns.length ? (
           <ul className="divide-y divide-line">
             {conns.map((c) => (
-              <li key={c.id} className="flex items-center gap-3 py-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/10 text-accent"><Landmark className="h-4 w-4" /></span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{c.institution || 'Banco'}</p>
-                  <p className="text-xs text-muted">{c.last_sync_at ? `Sincronizado ${relativeTimeBR(c.last_sync_at)}` : 'Aguardando primeira sincronização'}{c.status && c.status !== 'UPDATED' ? ` · ${c.status}` : ''}</p>
+              <li key={c.id} className="py-3">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent"><Landmark className="h-4 w-4" /></span>
+                  <div className="min-w-0 flex-1">
+                    {renaming === c.id ? (
+                      <form onSubmit={(e) => { e.preventDefault(); rename(c) }} className="flex gap-1.5">
+                        <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Ex.: Itaú"
+                          className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 text-sm focus:border-accent focus:outline-none" />
+                        <button className="rounded-lg bg-accent px-2 text-accent-ink" title="Salvar"><Check className="h-4 w-4" /></button>
+                      </form>
+                    ) : (
+                      <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+                        {c.institution || 'Banco'}
+                        <button onClick={() => { play('tap'); setRenaming(c.id); setNewName(/meu\s?pluggy/i.test(c.institution || '') ? '' : c.institution || '') }} title="Renomear" className="rounded p-0.5 text-muted hover:text-ink"><Pencil className="h-3 w-3" /></button>
+                      </p>
+                    )}
+                    <p className="text-xs text-muted">{c.last_sync_at ? `Sincronizado ${relativeTimeBR(c.last_sync_at)}` : 'Aguardando primeira sincronização'}{c.status && c.status !== 'UPDATED' ? ` · ${c.status}` : ''}</p>
+                  </div>
+                  <button onClick={() => remove(c)} title="Desconectar" className="rounded-lg p-1.5 text-muted hover:bg-surface-2 hover:text-expense"><Trash2 className="h-4 w-4" /></button>
                 </div>
-                <button onClick={() => remove(c)} title="Desconectar" className="rounded-lg p-1.5 text-muted hover:bg-surface-2 hover:text-expense"><Trash2 className="h-4 w-4" /></button>
+                {!!accounts[c.id]?.length && (
+                  <div className="ml-12 mt-2 flex flex-wrap gap-1.5">
+                    {accounts[c.id].map((a, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-2 py-1 text-[11px] text-muted">
+                        {a.type === 'Cartão' ? <CreditCard className="h-3 w-3" /> : <Wallet className="h-3 w-3" />}
+                        {a.name || a.type}{a.last4 ? ` ·${a.last4}` : ''}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </li>
             ))}
           </ul>

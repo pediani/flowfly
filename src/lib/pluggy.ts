@@ -31,7 +31,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export type PluggyItem = { id: string; status: string; executionStatus?: string; lastUpdatedAt?: string; connector?: { name?: string } }
-export type PluggyAccount = { id: string; type: 'BANK' | 'CREDIT' | string; subtype?: string; name?: string; marketingName?: string; number?: string }
+export type PluggyAccount = { id: string; type: 'BANK' | 'CREDIT' | string; subtype?: string; name?: string; marketingName?: string; number?: string; owner?: string }
 export type PluggyTx = {
   id: string
   description: string

@@ -62,7 +62,50 @@ function dayDiff(a: string, b: string): number {
   return Math.abs((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86400000)
 }
 
-function accountLabel(institution: string | null, a: PluggyAccount): string {
+const BANKS: [RegExp, string][] = [
+  [/ita[uú]|personnalit|uniclass/i, 'Itaú'],
+  [/santander/i, 'Santander'],
+  [/mercado\s?pago|mercadopago/i, 'Mercado Pago'],
+  [/nubank|nu pagamentos|ultravioleta/i, 'Nubank'],
+  [/bradesco/i, 'Bradesco'],
+  [/banco do brasil|ourocard/i, 'Banco do Brasil'],
+  [/caixa/i, 'Caixa'],
+  [/\binter\b/i, 'Inter'],
+  [/\bc6\b/i, 'C6 Bank'],
+  [/\bbtg\b/i, 'BTG Pactual'],
+  [/\bxp\b/i, 'XP'],
+  [/picpay/i, 'PicPay'],
+  [/pagbank|pagseguro/i, 'PagBank'],
+  [/sicoob/i, 'Sicoob'],
+  [/sicredi/i, 'Sicredi'],
+  [/\bneon\b/i, 'Neon'],
+]
+
+const GENERIC_CONNECTOR = /meu\s?pluggy/i
+
+/** Descobre o banco pelos nomes das contas/cartões (o conector MeuPluggy não informa o banco). */
+export function detectInstitution(accounts: PluggyAccount[]): string | null {
+  const text = accounts.map((a) => `${a.marketingName || ''} ${a.name || ''}`).join(' ')
+  for (const [re, name] of BANKS) if (re.test(text)) return name
+  return null
+}
+
+/** Nome a usar: o que o usuário definiu > banco detectado > nome do conector (se não for genérico). */
+export function resolveInstitution(current: string | null, connectorName: string | undefined, accounts: PluggyAccount[]): string | null {
+  if (current && !GENERIC_CONNECTOR.test(current)) return current
+  return detectInstitution(accounts) || (connectorName && !GENERIC_CONNECTOR.test(connectorName) ? connectorName : current || connectorName || null)
+}
+
+/** Atualiza o rótulo "Banco · Cartão 1234" dos lançamentos já importados desta conexão. */
+export async function relabel(db: Db, userId: string, accounts: PluggyAccount[], from: string | null, to: string | null) {
+  if (!from || from === to) return
+  for (const a of accounts) {
+    await db.from('transactions').update({ bank_account: accountLabel(to, a) })
+      .eq('user_id', userId).eq('bank_account', accountLabel(from, a))
+  }
+}
+
+export function accountLabel(institution: string | null, a: PluggyAccount): string {
   const kind = a.type === 'CREDIT' ? 'Cartão' : 'Conta'
   return `${institution || 'Banco'} · ${kind}${a.number ? ` ${String(a.number).slice(-4)}` : ''}`
 }
@@ -71,8 +114,10 @@ export type SyncResult = { imported: TxRow[]; matched: number; skipped: number; 
 
 export async function syncConnection(db: Db, conn: BankConnection, opts: { initialDays?: number } = {}): Promise<SyncResult> {
   const item = await getItem(conn.item_id)
-  const institution = item.connector?.name || conn.institution
   const accounts = await listAccounts(conn.item_id)
+  const institution = resolveInstitution(conn.institution, item.connector?.name, accounts)
+  // Corrige lançamentos importados antes com o nome genérico ("MeuPluggy · Conta 1234")
+  if (conn.institution !== institution) await relabel(db, conn.user_id, accounts, conn.institution, institution)
 
   // Primeira vez: últimos N dias. Depois: só o que a Pluggy criou desde a última sincronização (com folga).
   const filter = conn.last_sync_at
