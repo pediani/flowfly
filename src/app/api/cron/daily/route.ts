@@ -3,7 +3,9 @@ import { addDays, monthKeyOf, todayBR } from '../../../../lib/dates'
 import { budgetStatus, pendingRecurring, recurringDay, type Recurring } from '../../../../lib/finance'
 import { budgetAlertMessage, reminderMessage, weeklyMessage } from '../../../../lib/telegramBot'
 import { sendMessage } from '../../../../lib/telegramApi'
-import { adminDb, fetchBudgets, fetchRecurring, fetchTxs, fetchTxsBetween, type Db } from '../../../../lib/botData'
+import { adminDb, fetchBudgets, fetchRecurring, fetchTxs, fetchTxsBetween, findPartner, type Db } from '../../../../lib/botData'
+import { notifyImported, syncConnection, type BankConnection } from '../../../../lib/bankSync'
+import { pluggyEnabled } from '../../../../lib/pluggy'
 
 // Roda todo dia às 12:00 UTC (9h em Brasília) — ver vercel.json.
 // A Vercel envia "Authorization: Bearer <CRON_SECRET>".
@@ -18,7 +20,21 @@ export async function GET(request: Request) {
 
   const db = adminDb
   const { data: connections } = await db.from('telegram_connections').select('telegram_chat_id, user_id')
-  const report = { users: 0, reminders: 0, weekly: 0, budgetAlerts: 0 }
+  const report = { users: 0, reminders: 0, weekly: 0, budgetAlerts: 0, bankImported: 0 }
+
+  // Bancos (Pluggy): garante a sincronização diária mesmo se algum webhook falhar
+  if (pluggyEnabled()) {
+    const { data: banks } = await db.from('bank_connections').select('*')
+    for (const b of (banks || []) as BankConnection[]) {
+      try {
+        const r = await syncConnection(db, b)
+        report.bankImported += r.imported.length
+        await notifyImported(db, b.user_id, r.imported, !!(await findPartner(db, b.user_id)))
+      } catch (e) {
+        console.error('Cron: sync Pluggy falhou', b.item_id, e)
+      }
+    }
+  }
 
   for (const c of connections || []) {
     report.users++

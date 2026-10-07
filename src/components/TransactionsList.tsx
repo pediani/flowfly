@@ -10,7 +10,7 @@ import type { Tx } from '../lib/finance'
 import { TransactionItem } from './TransactionItem'
 import { Card, Chip, EmptyState, inputClass } from './ui'
 
-type Filter = 'all' | 'entrada' | 'saida' | 'a_pagar' | 'telegram'
+type Filter = 'all' | 'entrada' | 'saida' | 'a_pagar' | 'telegram' | 'bank'
 
 const TYPE_LABEL: Record<string, string> = { entrada: 'Entrada', saida: 'Saída', a_pagar: 'A pagar' }
 
@@ -22,7 +22,7 @@ function exportCsv(rows: Tx[], name: string) {
     const signed = (t.type === 'entrada' ? 1 : -1) * Number(t.amount)
     lines.push([
       formatDateBR(t.date), t.created_at ? formatTimeBR(t.created_at) : '', TYPE_LABEL[t.type] || t.type,
-      esc(t.description), esc(t.category || 'Geral'), signed.toFixed(2).replace('.', ','), t.source === 'telegram' ? 'Telegram' : 'Painel',
+      esc(t.description), esc(t.category || 'Geral'), signed.toFixed(2).replace('.', ','), t.source === 'telegram' ? 'Telegram' : t.source === 'bank' ? 'Banco' : 'Painel',
     ].join(';'))
   }
   const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
@@ -49,7 +49,7 @@ export default function TransactionsList({ txs, monthKey, onDelete, onPay, onEdi
     const q = normalize(query)
     const list = txs.filter((t) =>
       (allMonths || t.date.startsWith(monthKey)) &&
-      (filter === 'all' || (filter === 'telegram' ? t.source === 'telegram' : t.type === filter)) &&
+      (filter === 'all' || (filter === 'telegram' || filter === 'bank' ? t.source === filter : t.type === filter)) &&
       (!q || normalize(`${t.description} ${t.category || ''}`).includes(q)))
     const map = new Map<string, Tx[]>()
     for (const t of list) map.set(t.date, [...(map.get(t.date) || []), t])
@@ -74,6 +74,7 @@ export default function TransactionsList({ txs, monthKey, onDelete, onPay, onEdi
           <Chip active={filter === 'entrada'} onClick={() => setFilter('entrada')}>Entradas</Chip>
           <Chip active={filter === 'a_pagar'} onClick={() => setFilter('a_pagar')}>Pendentes</Chip>
           <Chip active={filter === 'telegram'} onClick={() => setFilter('telegram')}>Via Telegram</Chip>
+          <Chip active={filter === 'bank'} onClick={() => setFilter('bank')}>Do banco</Chip>
           <span className="mx-1 w-px shrink-0 bg-line" />
           <Chip active={!allMonths} onClick={() => setAllMonths(false)}>{monthLabel(monthKey)}</Chip>
           <Chip active={allMonths} onClick={() => setAllMonths(true)}>Todos os meses</Chip>

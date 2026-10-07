@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { Send, UserPlus, Check, X, Copy, RefreshCw } from 'lucide-react'
 import { play } from '../lib/sounds'
+import BanksCard from './BanksCard'
 
 const BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || 'flowly_financeirobot'
 
@@ -20,7 +21,7 @@ const btn = 'inline-flex items-center justify-center gap-2 rounded-xl px-3 h-10 
 const btnPrimary = `${btn} bg-accent text-accent-ink hover:bg-accent-strong`
 const btnGhost = `${btn} border border-line text-ink/90 hover:bg-surface-2`
 
-export default function ConnectionsPanel({ onPartnersChange }: { onPartnersChange: () => void }) {
+export default function ConnectionsPanel({ onPartnersChange, onBankSynced }: { onPartnersChange: () => void; onBankSynced: () => void }) {
   // --- Telegram ---
   const [chatId, setChatId] = useState<number | null>(null)
   const [code, setCode] = useState<string | null>(null)
@@ -103,7 +104,8 @@ export default function ConnectionsPanel({ onPartnersChange }: { onPartnersChang
   const link = code ? `https://t.me/${BOT_USERNAME}?start=${code}` : null
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-2">
+      <BanksCard onSynced={onBankSynced} />
       {/* TELEGRAM */}
       <div className={card}>
         <div className="p-6 border-b border-line">

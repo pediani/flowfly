@@ -39,6 +39,7 @@ export default function Home() {
 
   const loadTransactions = useCallback(async () => {
     const { data } = await supabase.from('transactions').select('*')
+      .neq('type', 'ignorado')
       .order('date', { ascending: false })
       .order('created_at', { ascending: false, nullsFirst: false })
     setTxs((data as Tx[]) || [])
@@ -89,6 +90,14 @@ export default function Home() {
   }
 
   async function handleDelete(t: Tx) {
+    // Do banco: marca como ignorado (mantém o vínculo para não ser importado de novo)
+    if (t.source === 'bank') {
+      if (!confirm(`Ignorar "${t.description}"? Ele sai dos totais e não volta na próxima sincronização.`)) return
+      const { error } = await supabase.from('transactions').update({ type: 'ignorado' }).eq('id', t.id)
+      play(error ? 'error' : 'delete')
+      loadTransactions()
+      return
+    }
     const group = (t as Tx & { installment_group?: string | null }).installment_group
     const all = group && confirm(`"${t.description}" é parcelado. OK = excluir todas as parcelas · Cancelar = só esta`)
     if (!all && !confirm(`Excluir "${t.description}"?`)) return
@@ -142,7 +151,7 @@ export default function Home() {
         )}
         {tab === 'lancamentos' && <TransactionsList txs={txs} monthKey={monthKey} onDelete={handleDelete} onPay={handlePay} onEdit={handleEdit} />}
         {tab === 'fixas' && <RecurringPanel userId={userId} recurring={recurring} txs={txs} onChange={loadRecurring} onPaid={loadTransactions} />}
-        {tab === 'conexoes' && <ConnectionsPanel onPartnersChange={loadPartners} />}
+        {tab === 'conexoes' && <ConnectionsPanel onPartnersChange={loadPartners} onBankSynced={loadTransactions} />}
       </AppShell>
 
       <TransactionSheet

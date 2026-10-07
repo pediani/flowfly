@@ -1,6 +1,6 @@
 'use client'
 
-import { CheckCircle2, Pencil, Send, Trash2 } from 'lucide-react'
+import { CheckCircle2, Landmark, Pencil, Send, Trash2 } from 'lucide-react'
 import { formatDateBR, relativeTimeBR, todayBR } from '../lib/dates'
 import { formatBRL } from '../lib/format'
 import type { Tx } from '../lib/finance'
@@ -30,6 +30,16 @@ export function TransactionItem({ t, onDelete, onPay, onEdit, delay = 0 }: {
           {t.source === 'telegram' && (
             <span className="inline-flex items-center gap-1 rounded-md bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info">
               <Send className="h-2.5 w-2.5" /> Telegram
+            </span>
+          )}
+          {t.source === 'bank' && (
+            <span title={(t as Tx & { bank_description?: string }).bank_description || ''} className="inline-flex items-center gap-1 rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+              <Landmark className="h-2.5 w-2.5" /> {(t as Tx & { bank_account?: string }).bank_account?.split(' · ')[0] || 'Banco'}
+            </span>
+          )}
+          {(t as Tx & { external_id?: string }).external_id && t.source !== 'bank' && (
+            <span title="Conferido com o extrato do banco" className="inline-flex items-center gap-1 rounded-md bg-income/10 px-1.5 py-0.5 text-[10px] font-medium text-income">
+              <Landmark className="h-2.5 w-2.5" /> conferido
             </span>
           )}
           {t.is_split && <span className="rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">dividido</span>}

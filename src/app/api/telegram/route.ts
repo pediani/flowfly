@@ -13,6 +13,7 @@ import {
   TX_COLS, adminDb, entryFromRows, fetchBudgets, fetchRecurring, fetchTxs, fetchTxsBetween, findPartner, insertEntry, rowsOf,
   type Db, type TxRow,
 } from '../../../lib/botData'
+import { bankEntryMessage, bankKeyboard } from '../../../lib/bankSync'
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || ''
 // Valor definido no setWebhook (secret_token). O Telegram o reenvia no header abaixo.
@@ -182,7 +183,7 @@ async function handleWeek(db: Db, chatId: number, userId: string) {
 
 async function handleLast(db: Db, chatId: number, userId: string) {
   const { data } = await db.from('transactions').select(TX_COLS).eq('user_id', userId)
-    .lte('date', todayBR())
+    .lte('date', todayBR()).neq('type', 'ignorado')
     .order('date', { ascending: false }).order('created_at', { ascending: false, nullsFirst: false }).limit(8)
   await sendMessage(chatId, lastEntriesMessage((data || []) as TxRow[]))
 }
@@ -243,9 +244,16 @@ async function handleCallback(db: Db, cq: CallbackQuery) {
     await editKeyboard(chatId, messageId, { inline_keyboard: [] })
     return
   }
-  const row = tx as TxRow
+  const row = tx as TxRow & { bank_description?: string | null; bank_account?: string | null }
   const partner = await findPartner(db, userId)
-  const kb = entryKeyboard(row.id, { canSplit: !!partner && !row.is_split, isIn: row.type === 'entrada' })
+  const fromBank = row.source === 'bank'
+  const kb = fromBank
+    ? bankKeyboard(row.id, !!partner && !row.is_split, row.type === 'entrada')
+    : entryKeyboard(row.id, { canSplit: !!partner && !row.is_split, isIn: row.type === 'entrada' })
+  // Lançamentos do banco: redesenha com o layout próprio
+  const rerender = async (rows: TxRow[]) => fromBank
+    ? bankEntryMessage({ ...row, ...rows[0] })
+    : renderEntry(db, userId, entryFromRows(rows), row.created_at || new Date().toISOString())
 
   switch (action) {
     case 'c':
@@ -262,16 +270,14 @@ async function handleCallback(db: Db, cq: CallbackQuery) {
       const rows = await rowsOf(db, row)
       await db.from('transactions').update({ category: cat.name }).in('id', rows.map((r) => r.id))
       await answerCallback(cq.id, `${cat.emoji} ${cat.name}`)
-      const updated = rows.map((r) => ({ ...r, category: cat.name }))
-      await editMessage(chatId, messageId, await renderEntry(db, userId, entryFromRows(updated), row.created_at || new Date().toISOString()), kb)
+      await editMessage(chatId, messageId, await rerender(rows.map((r) => ({ ...r, category: cat.name }))), kb)
       return
     }
     case 'y': {
       const rows = await rowsOf(db, row)
       await Promise.all(rows.map((r) => db.from('transactions').update({ date: addDays(r.date, -1) }).eq('id', r.id)))
       await answerCallback(cq.id, '📅 Movido para o dia anterior')
-      const updated = rows.map((r) => ({ ...r, date: addDays(r.date, -1) }))
-      await editMessage(chatId, messageId, await renderEntry(db, userId, entryFromRows(updated), row.created_at || new Date().toISOString()), kb)
+      await editMessage(chatId, messageId, await rerender(rows.map((r) => ({ ...r, date: addDays(r.date, -1) }))), kb)
       return
     }
     case 'd': {
@@ -284,10 +290,23 @@ async function handleCallback(db: Db, cq: CallbackQuery) {
         description: `Metade: ${r.description}`, category: r.category, date: r.date, source: 'telegram', split_parent_id: r.id,
       })))
       await answerCallback(cq.id, '👥 Dividido com seu parceiro')
-      await editKeyboard(chatId, messageId, entryKeyboard(row.id, { canSplit: false, isIn: false }))
+      await editKeyboard(chatId, messageId, fromBank ? bankKeyboard(row.id, false, false) : entryKeyboard(row.id, { canSplit: false, isIn: false }))
+      return
+    }
+    case 'i': {
+      // Ignorar (lançamento do banco): mantém o vínculo para não reimportar, mas tira dos totais
+      await db.from('transactions').update({ type: 'ignorado' }).eq('id', row.id)
+      await answerCallback(cq.id, '🙈 Ignorado')
+      await editMessage(chatId, messageId, bankEntryMessage({ ...row, type: 'ignorado' }))
       return
     }
     case 'u':
+      if (fromBank) {
+        await db.from('transactions').update({ type: 'ignorado' }).eq('id', row.id)
+        await answerCallback(cq.id, '🙈 Ignorado')
+        await editMessage(chatId, messageId, bankEntryMessage({ ...row, type: 'ignorado' }))
+        return
+      }
       await answerCallback(cq.id, '↩️ Removido')
       await editMessage(chatId, messageId, await undoRows(db, userId, row))
       return
