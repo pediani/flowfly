@@ -48,10 +48,12 @@ export async function interpret(text: string, today = todayBR()): Promise<Parsed
 
   try {
     const data = await res.json()
-    const j = JSON.parse(data.choices?.[0]?.message?.content || '{}')
-    if (!j.ok) return null
+    const content = data.choices?.[0]?.message?.content || '{}'
+    const j = JSON.parse(content)
+    // O modelo às vezes omite "ok": só descarta se disser explicitamente que não é lançamento
+    if (j.ok === false) { console.log('Groq: não é lançamento:', text); return null }
     const amount = Math.round(Number(j.amount) * 100) / 100
-    if (!Number.isFinite(amount) || amount <= 0 || !j.description) return null
+    if (!Number.isFinite(amount) || amount <= 0 || !j.description) { console.log('Groq: resposta incompleta:', content); return null }
     const type = j.type === 'entrada' ? 'entrada' : 'saida'
     const date = /^\d{4}-\d{2}-\d{2}$/.test(j.date) && j.date <= today ? j.date : (resolveDateToken(String(j.date || ''), today) ?? today)
     const category = CATEGORY_NAMES.includes(j.category) ? j.category : type === 'entrada' ? 'Renda' : 'Geral'

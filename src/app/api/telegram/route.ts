@@ -3,7 +3,7 @@ import { CATEGORIES, detectCategory } from '../../../lib/categories'
 import { addDays, addMonths, currentMonthKey, monthKeyOf, todayBR } from '../../../lib/dates'
 import { pendingRecurring } from '../../../lib/finance'
 import { groqEnabled, interpret, transcribe } from '../../../lib/groq'
-import { parseEntry, type ParsedEntry } from '../../../lib/parseEntry'
+import { parseEntry, parseNatural, type ParsedEntry } from '../../../lib/parseEntry'
 import {
   INVALID_FORMAT, categoryKeyboard, entryKeyboard, escapeHtml, helpMessage, lastEntriesMessage,
   savedMessage, summaryMessage, undoMessage, weeklyMessage,
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true })
     }
 
-    let entry = parseEntry(text)
+    let entry = parseEntry(text) ?? parseNatural(text)
     if (!entry && groqEnabled()) {
       await sendTyping(chatId)
       entry = await interpret(text)
@@ -159,9 +159,9 @@ async function handleVoice(db: Db, chatId: number, userId: string, file: { file_
     await sendMessage(chatId, '🎙️ Não consegui entender o áudio. Tente de novo ou envie por texto.')
     return
   }
-  const entry = parseEntry(heard) ?? await interpret(heard)
+  const entry = parseEntry(heard) ?? parseNatural(heard) ?? await interpret(heard)
   if (!entry) {
-    await sendMessage(chatId, `🎙️ Ouvi: “${escapeHtml(heard)}”\n\nMas não encontrei um valor. Tente: “gastei 30 reais no uber”.`)
+    await sendMessage(chatId, `🎙️ Ouvi: “${escapeHtml(heard)}”\n\nMas não consegui identificar o lançamento. Tente falar o valor e o que foi, ex.: “uber 30 reais”.`)
     return
   }
   await sendMessage(chatId, `🎙️ <i>“${escapeHtml(heard)}”</i>`)

@@ -122,3 +122,46 @@ export function installmentDate(start: string, k: number): string {
   const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate()
   return new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth(), Math.min(d, last))).toISOString().slice(0, 10)
 }
+
+// ---- Frases livres (sem IA) ----
+
+const IN_WORDS = /\b(recebi|ganhei|entrou|caiu|salario|salário|freela|reembolso|vendi|pix recebido)\b/i
+const FILLER = new Set(['gastei', 'paguei', 'comprei', 'gasto', 'gastos', 'foi', 'deu', 'custou', 'recebi', 'ganhei', 'entrou', 'caiu', 'vendi',
+  'reais', 'real', 'r$', 'conto', 'contos', 'pila', 'pilas', 'no', 'na', 'nos', 'nas', 'de', 'do', 'da', 'dos', 'das', 'em', 'com',
+  'um', 'uma', 'o', 'a', 'os', 'as', 'pro', 'pra', 'para', 'por', 'e', 'eu', 'hoje', 'ontem', 'anteontem', 'mais', 'só', 'so', 'tipo', 'uns', 'umas', 'centavos'])
+
+/**
+ * "Gastei 30 reais no Uber" · "paguei 45,90 de farmácia ontem" · "recebi 1.500 de salário"
+ * Procura o valor em qualquer posição e usa o resto (sem palavras de ligação) como descrição.
+ */
+export function parseNatural(text: string, today = todayBR()): ParsedEntry | null {
+  const clean = text.trim().replace(/[.!?]+$/, '').replace(/\s+/g, ' ')
+  // valor: "30", "30,50", "1.500", "R$ 30", "30 reais e 50 centavos"
+  const m = clean.match(/(?:R\$\s*)?(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)(?:\s*(?:reais|real|conto|contos|pila)?(?:\s+e\s+(\d{1,2})\s+centavos)?)?/i)
+  if (!m) return null
+  let raw = m[1]
+  if (/^\d{1,3}(\.\d{3})+(,\d{1,2})?$/.test(raw)) raw = raw.replace(/\./g, '')
+  let amount = parseFloat(raw.replace(',', '.'))
+  if (m[2]) amount += Number(m[2]) / 100
+  amount = Math.round(amount * 100) / 100
+  if (!Number.isFinite(amount) || amount <= 0) return null
+
+  const type: EntryType = IN_WORDS.test(strip(clean)) ? 'entrada' : 'saida'
+  let date = today
+  const dm = clean.match(/\b(dia \d{1,2}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?|hoje|ontem|anteontem)\b/i)
+  if (dm) date = resolveDateToken(dm[1], today) ?? today
+  const inst = clean.match(/\b(\d{1,2})\s?(?:x|vezes)\b/i)
+  const installments = type === 'saida' && inst && Number(inst[1]) >= 2 && Number(inst[1]) <= 48 ? Number(inst[1]) : 1
+
+  const rest = (clean.slice(0, m.index) + ' ' + clean.slice((m.index || 0) + m[0].length))
+    .replace(dm ? dm[0] : /$^/, ' ').replace(inst ? inst[0] : /$^/, ' ').replace(/\bem\s*$/i, ' ')
+  const words = rest.split(/\s+/).filter((w) => w && !FILLER.has(strip(w)) && !/^\d+$/.test(w))
+  const description = words.join(' ').trim().slice(0, 200)
+  if (!description) return null
+
+  return {
+    type, description, amount, date, installments,
+    category: detectCategory(description, type),
+    categoryExplicit: false,
+  }
+}
