@@ -188,8 +188,10 @@ export function monthProjection(txs: Tx[], recurring: Recurring[], key: string, 
   if (isCurrent || isFuture) {
     const hist = avgVariableSpending(txs, key, recurring)
     const cur = todayDay > 0 ? variableSpending(txs, key, recurring) / todayDay : 0
-    // Início do mês tem pouca amostra: usa o histórico se existir
-    dailyVariable = todayDay >= 7 || hist === null ? cur : hist / total
+    // Mistura o ritmo do mês com a média histórica, dando mais peso ao mês conforme ele avança
+    // (evita que uma compra grande no início do mês distorça a projeção)
+    const w = todayDay / total
+    dailyVariable = hist === null ? cur : w * cur + (1 - w) * (hist / total)
   }
 
   const series: DayPoint[] = []

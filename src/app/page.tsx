@@ -89,8 +89,8 @@ export default function Home() {
     return (
       <div className="relative z-10 flex min-h-dvh items-center justify-center">
         <div className="flex flex-col items-center gap-4 animate-fade-in">
-          <div className="flex h-14 w-14 items-center justify-center rounded-[1.2rem] bg-gradient-to-br from-[#c7b3f7] via-[#9a7ae6] to-[#6c4fc4] animate-pulse">
-            <Zap className="h-7 w-7 text-[#fffaf2]" fill="#fffaf2" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent animate-pulse">
+            <Zap className="h-6 w-6 text-white" fill="currentColor" />
           </div>
           <p className="text-xs uppercase tracking-[0.3em] text-muted">FlowFly</p>
         </div>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Search } from 'lucide-react'
+import { Search, SearchX } from 'lucide-react'
 import { normalize } from '../lib/categories'
 import { dayLabelBR, monthLabel } from '../lib/dates'
 import { formatBRL } from '../lib/format'
@@ -60,7 +60,7 @@ export default function TransactionsList({ txs, monthKey, onDelete, onPay }: {
       {groups.length ? groups.map((g, gi) => (
         <Card key={g.date} delay={Math.min(gi, 6) * 40}>
           <div className="flex items-center justify-between px-5 pt-4 text-sm">
-            <span className="font-display capitalize">{dayLabelBR(g.date)}{allMonths && ` · ${g.date.slice(0, 4)}`}</span>
+            <span className="font-medium capitalize">{dayLabelBR(g.date)}{allMonths && ` · ${g.date.slice(0, 4)}`}</span>
             <span className={`tabular text-xs ${g.net >= 0 ? 'text-income' : 'text-expense'}`}>{g.net >= 0 ? '+' : '−'} {formatBRL(Math.abs(g.net))}</span>
           </div>
           <ul className="divide-y divide-line px-5 pb-1">
@@ -68,7 +68,7 @@ export default function TransactionsList({ txs, monthKey, onDelete, onPay }: {
           </ul>
         </Card>
       )) : (
-        <Card><EmptyState emoji="🔎" title="Nenhum lançamento encontrado" text="Ajuste os filtros ou a busca." /></Card>
+        <Card><EmptyState icon={SearchX} title="Nenhum lançamento encontrado" text="Ajuste os filtros ou a busca." /></Card>
       )}
     </div>
   )

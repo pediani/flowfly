@@ -1,10 +1,10 @@
 'use client'
 
 import { CheckCircle2, Send, Trash2 } from 'lucide-react'
-import { getCategory } from '../lib/categories'
 import { formatDateBR, relativeTimeBR } from '../lib/dates'
 import { formatBRL } from '../lib/format'
 import type { Tx } from '../lib/finance'
+import { CategoryIcon } from './CategoryIcon'
 import { cx } from './ui'
 
 export function TransactionItem({ t, onDelete, onPay, delay = 0 }: {
@@ -13,33 +13,30 @@ export function TransactionItem({ t, onDelete, onPay, delay = 0 }: {
   onPay?: (t: Tx) => void
   delay?: number
 }) {
-  const cat = getCategory(t.category)
   const pending = t.type === 'a_pagar'
   const isIn = t.type === 'entrada'
   const when = t.created_at ? relativeTimeBR(t.created_at) : formatDateBR(t.date)
 
   return (
-    <li className="group flex items-center gap-3 py-3 animate-fade-up" style={{ animationDelay: `${delay}ms` }}>
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-lg" style={{ background: `${cat.color}33` }}>
-        {cat.emoji}
-      </div>
+    <li className="group flex items-center gap-3 py-2.5 animate-fade-up" style={{ animationDelay: `${delay}ms` }}>
+      <CategoryIcon category={t.category} />
       <div className="min-w-0 flex-1">
-        <p className="truncate font-medium">{t.description}</p>
+        <p className="truncate text-sm font-medium">{t.description}</p>
         <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
           <span>{t.category || 'Geral'}</span>
           <span>·</span>
           <span title={t.created_at ? new Date(t.created_at).toLocaleString('pt-BR') : 'Lançamento sem hora registrada'}>{when}</span>
           {t.source === 'telegram' && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-info/15 px-1.5 py-0.5 text-[10px] font-medium text-info">
+            <span className="inline-flex items-center gap-1 rounded-md bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info">
               <Send className="h-2.5 w-2.5" /> Telegram
             </span>
           )}
-          {t.is_split && <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">dividido</span>}
-          {pending && <span className="rounded-full bg-warn/15 px-1.5 py-0.5 text-[10px] font-medium text-warn">pendente</span>}
+          {t.is_split && <span className="rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">dividido</span>}
+          {pending && <span className="rounded-md bg-warn/10 px-1.5 py-0.5 text-[10px] font-medium text-warn">pendente</span>}
         </p>
       </div>
       <div className="flex flex-col items-end gap-1">
-        <span className={cx('tabular font-semibold', isIn ? 'text-income' : pending ? 'text-warn' : 'text-expense')}>
+        <span className={cx('tabular text-sm font-semibold', isIn ? 'text-income' : pending ? 'text-warn' : 'text-expense')}>
           {isIn ? '+' : '−'} {formatBRL(Number(t.amount))}
         </span>
         <div className="flex gap-1 opacity-70 transition md:opacity-0 md:group-hover:opacity-100">

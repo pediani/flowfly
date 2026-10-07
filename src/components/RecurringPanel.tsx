@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { CalendarClock, Trash2 } from 'lucide-react'
+import { CalendarClock, CalendarX, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { formatBRL } from '../lib/format'
 import { pendingRecurring, type Recurring, type Tx } from '../lib/finance'
@@ -53,8 +53,8 @@ export default function RecurringPanel({ userId, recurring, txs, onChange }: {
         <CardHeader title="Nova conta fixa" icon={<CalendarClock className="h-4 w-4 text-accent" />} subtitle="Compromissos mensais entram na projeção automaticamente." />
         <form onSubmit={handleAdd} className="space-y-3 px-5 pb-5">
           <Segmented value={type} onChange={setType} options={[
-            { value: 'saida', label: 'Gasto fixo', activeClass: 'bg-expense text-[#2a1620] shadow' },
-            { value: 'entrada', label: 'Renda fixa', activeClass: 'bg-income text-[#10261c] shadow' },
+            { value: 'saida', label: 'Gasto fixo', activeClass: 'bg-surface text-expense shadow-[var(--shadow)]' },
+            { value: 'entrada', label: 'Renda fixa', activeClass: 'bg-surface text-income shadow-[var(--shadow)]' },
           ]} />
           <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Ex.: Aluguel, Salário, Netflix" className={inputClass} />
           <div className="grid grid-cols-2 gap-3">
@@ -70,9 +70,9 @@ export default function RecurringPanel({ userId, recurring, txs, onChange }: {
         <ul className="divide-y divide-line px-5 pb-2">
           {recurring.length ? recurring.map((r, i) => (
             <li key={r.id} className="flex items-center gap-3 py-3 animate-fade-up" style={{ animationDelay: `${i * 40}ms` }}>
-              <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-2xl bg-surface-2 leading-none">
+              <div className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-xl bg-surface-2 leading-none">
                 <span className="text-[9px] uppercase text-muted">dia</span>
-                <span className="font-display text-lg">{r.day_of_month}</span>
+                <span className="text-base font-semibold tabular">{r.day_of_month}</span>
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{r.description}</p>
@@ -83,7 +83,7 @@ export default function RecurringPanel({ userId, recurring, txs, onChange }: {
               <span className={cx('tabular font-semibold', r.type === 'entrada' ? 'text-income' : 'text-expense')}>{formatBRL(Number(r.amount))}</span>
               <button onClick={() => handleDelete(r)} title="Excluir" className="rounded-lg p-1.5 text-muted hover:text-expense hover:bg-surface-2"><Trash2 className="h-4 w-4" /></button>
             </li>
-          )) : <EmptyState emoji="🗓️" title="Nenhuma conta fixa" text="Cadastre aluguel, salário e assinaturas para melhorar a projeção." />}
+          )) : <EmptyState icon={CalendarX} title="Nenhuma conta fixa" text="Cadastre aluguel, salário e assinaturas para melhorar a projeção." />}
         </ul>
       </Card>
     </div>

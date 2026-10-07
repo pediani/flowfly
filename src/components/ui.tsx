@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { X } from 'lucide-react'
+import { Inbox, X, type LucideIcon } from 'lucide-react'
 import { formatBRL } from '../lib/format'
 import { play } from '../lib/sounds'
 
@@ -12,7 +12,7 @@ export function cx(...c: (string | false | null | undefined)[]) {
 export function Card({ children, className, delay = 0 }: { children: ReactNode; className?: string; delay?: number }) {
   return (
     <section
-      className={cx('rounded-3xl border border-line bg-surface/90 backdrop-blur-sm shadow-[0_8px_30px_-12px_rgba(0,0,0,0.35)] animate-fade-up', className)}
+      className={cx('flex flex-col rounded-2xl border border-line bg-surface shadow-[var(--shadow)] animate-fade-up', className)}
       style={{ animationDelay: `${delay}ms` }}
     >
       {children}
@@ -24,7 +24,7 @@ export function CardHeader({ title, subtitle, icon, action }: { title: string; s
   return (
     <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-3">
       <div className="min-w-0">
-        <h3 className="font-display text-lg leading-tight tracking-tight flex items-center gap-2">
+        <h3 className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
           {icon}
           {title}
         </h3>
@@ -75,15 +75,15 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
   className?: string
 }) {
   return (
-    <div className={cx('grid gap-1 rounded-2xl bg-surface-2 p-1', className)} style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+    <div className={cx('grid gap-1 rounded-xl bg-surface-2 p-1', className)} style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
           onClick={() => { if (o.value !== value) { play('toggle'); onChange(o.value) } }}
           className={cx(
-            'h-10 rounded-xl text-sm font-medium transition-all active:scale-[0.97]',
-            o.value === value ? (o.activeClass || 'bg-accent text-accent-ink shadow') : 'text-muted hover:text-ink',
+            'h-9 rounded-lg text-sm font-medium transition-all active:scale-[0.97]',
+            o.value === value ? (o.activeClass || 'bg-surface text-ink shadow-[var(--shadow)]') : 'text-muted hover:text-ink',
           )}
         >
           {o.label}
@@ -99,8 +99,8 @@ export function Chip({ active, onClick, children }: { active: boolean; onClick: 
       type="button"
       onClick={() => { play('tap'); onClick() }}
       className={cx(
-        'shrink-0 rounded-full border px-3 h-8 text-xs font-medium transition-all active:scale-95',
-        active ? 'border-accent bg-accent/15 text-ink' : 'border-line text-muted hover:text-ink',
+        'shrink-0 rounded-lg border px-3 h-8 text-xs font-medium transition-all active:scale-95',
+        active ? 'border-ink/80 bg-ink text-bg' : 'border-line text-muted hover:text-ink',
       )}
     >
       {children}
@@ -115,7 +115,7 @@ export function IconButton({ onClick, title, children, className }: { onClick: (
       onClick={onClick}
       title={title}
       aria-label={title}
-      className={cx('inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-surface text-muted transition-all hover:text-ink active:scale-90', className)}
+      className={cx('inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-all hover:bg-surface-2 hover:text-ink active:scale-90', className)}
     >
       {children}
     </button>
@@ -123,13 +123,13 @@ export function IconButton({ onClick, title, children, className }: { onClick: (
 }
 
 export const inputClass =
-  'flex h-12 w-full rounded-2xl border border-line bg-surface-2/60 px-4 text-ink placeholder:text-muted/70 focus:outline-none focus:ring-2 focus:ring-accent/60 transition'
+  'flex h-11 w-full rounded-xl border border-line bg-surface px-3.5 text-ink placeholder:text-muted/70 focus:outline-none focus:border-accent focus:ring-4 focus:ring-accent/15 transition'
 
 export const primaryButton =
-  'inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-accent px-4 font-semibold text-accent-ink shadow-[0_10px_30px_-10px_var(--accent)] transition-all hover:bg-accent-strong active:scale-[0.98] disabled:opacity-50'
+  'inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 font-medium text-accent-ink transition-all hover:bg-accent-strong active:scale-[0.98] disabled:opacity-50'
 
 export const ghostButton =
-  'inline-flex h-10 items-center justify-center gap-2 rounded-2xl border border-line px-3 text-sm font-medium text-ink/90 transition-all hover:bg-surface-2 active:scale-[0.97]'
+  'inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-line px-3 text-sm font-medium text-ink transition-all hover:bg-surface-2 active:scale-[0.97]'
 
 /** Painel que sobe de baixo no celular e vira modal centralizado no desktop */
 export function Sheet({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
@@ -145,12 +145,12 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-in" onClick={onClose} />
-      <div className="relative w-full max-h-[92dvh] overflow-y-auto rounded-t-[2rem] border border-line bg-surface pb-[max(1.25rem,env(safe-area-inset-bottom))] animate-sheet-up md:max-w-lg md:rounded-[2rem] md:animate-pop">
-        <div className="sticky top-0 z-10 bg-surface/95 backdrop-blur px-5 pt-3 pb-2">
-          <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-line md:hidden" />
+      <div className="absolute inset-0 bg-black/60 animate-fade-in" onClick={onClose} />
+      <div className="relative w-full max-h-[92dvh] overflow-y-auto rounded-t-3xl border border-line bg-surface pb-[max(1.25rem,env(safe-area-inset-bottom))] animate-sheet-up md:max-w-md md:rounded-2xl md:animate-pop">
+        <div className="sticky top-0 z-10 bg-surface px-5 pt-3 pb-2">
+          <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-line md:hidden" />
           <div className="flex items-center justify-between">
-            <h2 className="font-display text-xl">{title}</h2>
+            <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
             <button type="button" onClick={onClose} aria-label="Fechar" className="rounded-full p-2 text-muted hover:text-ink hover:bg-surface-2">
               <X className="h-5 w-5" />
             </button>
@@ -162,11 +162,11 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
   )
 }
 
-export function EmptyState({ emoji, title, text }: { emoji: string; title: string; text?: string }) {
+export function EmptyState({ icon: Icon = Inbox, title, text }: { icon?: LucideIcon; title: string; text?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-1 py-10 text-center">
-      <span className="text-3xl">{emoji}</span>
-      <p className="font-medium mt-1">{title}</p>
+    <div className="flex flex-1 flex-col items-center justify-center gap-1 py-10 text-center">
+      <span className="mb-1 flex h-10 w-10 items-center justify-center rounded-xl bg-surface-2 text-muted"><Icon className="h-5 w-5" /></span>
+      <p className="text-sm font-medium">{title}</p>
       {text && <p className="text-sm text-muted max-w-xs">{text}</p>}
     </div>
   )

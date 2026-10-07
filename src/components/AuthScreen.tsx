@@ -45,14 +45,14 @@ export default function AuthScreen() {
     <div className="relative z-10 flex min-h-dvh items-center justify-center px-5 py-10">
       <div className="w-full max-w-sm animate-fade-up">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-[1.4rem] bg-gradient-to-br from-[#c7b3f7] via-[#9a7ae6] to-[#6c4fc4] shadow-[0_12px_40px_-10px_var(--accent)] animate-pop">
-            <Zap className="h-8 w-8 text-[#fffaf2]" fill="#fffaf2" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent animate-pop">
+            <Zap className="h-6 w-6 text-white" fill="currentColor" />
           </div>
-          <h1 className="font-display text-4xl mt-5">FlowFly</h1>
+          <h1 className="mt-4 text-2xl font-semibold tracking-tight">FlowFly</h1>
           <p className="text-sm text-muted mt-2">Seu dinheiro fluindo, do painel ao Telegram.</p>
         </div>
 
-        <div className="rounded-[2rem] border border-line bg-surface/90 backdrop-blur p-6 shadow-xl">
+        <div className="rounded-2xl border border-line bg-surface p-6 shadow-[var(--shadow)]">
           <form onSubmit={handlePassword} className="space-y-3">
             <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" className={inputClass} />
             <input type="password" required autoComplete={isSignUp ? 'new-password' : 'current-password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Senha" className={inputClass} />

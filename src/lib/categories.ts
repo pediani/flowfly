@@ -2,28 +2,29 @@ export type EntryType = 'entrada' | 'saida'
 
 export type CategoryDef = {
   name: string
-  emoji: string
+  emoji: string // usado nas mensagens do Telegram
+  icon: string // nome do ícone lucide usado no painel (ver components/CategoryIcon.tsx)
   color: string
   keywords: string[]
 }
 
-// Cores pastel que funcionam nos temas claro e escuro
+// Cores vivas que funcionam nos temas claro e escuro
 export const CATEGORIES: CategoryDef[] = [
-  { name: 'Alimentação', emoji: '🍽️', color: '#f2b8a0', keywords: ['mercado', 'supermercado', 'ifood', 'almoco', 'jantar', 'lanche', 'restaurante', 'padaria', 'cafe', 'pizza', 'hamburguer', 'acougue', 'feira', 'rappi', 'comida', 'delivery', 'hortifruti', 'sorvete', 'doces'] },
-  { name: 'Transporte', emoji: '🚗', color: '#a8c8f0', keywords: ['uber', '99', 'taxi', 'gasolina', 'combustivel', 'posto', 'estacionamento', 'pedagio', 'onibus', 'metro', 'passagem', 'ipva', 'oficina', 'mecanico', 'lavagem', 'bicicleta'] },
-  { name: 'Casa', emoji: '🏠', color: '#c9b8f0', keywords: ['aluguel', 'condominio', 'luz', 'energia', 'agua', 'gas', 'internet', 'iptu', 'faxina', 'diarista', 'moveis', 'reforma', 'limpeza', 'enel', 'sabesp'] },
-  { name: 'Lazer', emoji: '🎉', color: '#f5c6e0', keywords: ['cinema', 'bar', 'show', 'viagem', 'festa', 'cerveja', 'balada', 'ingresso', 'passeio', 'hotel', 'airbnb', 'jogo', 'teatro', 'praia'] },
-  { name: 'Saúde', emoji: '💊', color: '#9fdcc4', keywords: ['farmacia', 'remedio', 'medico', 'consulta', 'exame', 'dentista', 'academia', 'plano de saude', 'hospital', 'terapia', 'psicologo', 'drogaria'] },
-  { name: 'Assinaturas', emoji: '📺', color: '#f2d38b', keywords: ['netflix', 'spotify', 'prime video', 'amazon prime', 'disney', 'hbo', 'youtube', 'assinatura', 'icloud', 'chatgpt', 'globoplay', 'deezer', 'streaming'] },
-  { name: 'Compras', emoji: '🛍️', color: '#f0b4c4', keywords: ['roupa', 'shopping', 'amazon', 'mercado livre', 'shopee', 'presente', 'tenis', 'eletronico', 'magalu', 'shein', 'sapato'] },
-  { name: 'Educação', emoji: '📚', color: '#b5d8f2', keywords: ['curso', 'livro', 'faculdade', 'escola', 'mensalidade', 'udemy', 'alura', 'material escolar', 'idiomas', 'ingles'] },
-  { name: 'Renda', emoji: '💼', color: '#a6e3c4', keywords: ['salario', 'freela', 'freelance', 'pix recebido', 'venda', 'reembolso', 'rendimento', 'dividendos', 'bonus', 'pagamento recebido', 'decimo terceiro', 'ferias'] },
-  { name: 'Geral', emoji: '📌', color: '#cfc6dc', keywords: [] },
+  { name: 'Alimentação', emoji: '🍽️', icon: 'utensils', color: '#f97316', keywords: ['mercado', 'supermercado', 'ifood', 'almoco', 'jantar', 'lanche', 'restaurante', 'padaria', 'cafe', 'pizza', 'hamburguer', 'acougue', 'feira', 'rappi', 'comida', 'delivery', 'hortifruti', 'sorvete', 'doces'] },
+  { name: 'Transporte', emoji: '🚗', icon: 'car', color: '#3b82f6', keywords: ['uber', '99', 'taxi', 'gasolina', 'combustivel', 'posto', 'estacionamento', 'pedagio', 'onibus', 'metro', 'passagem', 'ipva', 'oficina', 'mecanico', 'lavagem', 'bicicleta'] },
+  { name: 'Casa', emoji: '🏠', icon: 'home', color: '#8b5cf6', keywords: ['aluguel', 'condominio', 'luz', 'energia', 'agua', 'gas', 'internet', 'iptu', 'faxina', 'diarista', 'moveis', 'reforma', 'limpeza', 'enel', 'sabesp'] },
+  { name: 'Lazer', emoji: '🎉', icon: 'party', color: '#ec4899', keywords: ['cinema', 'bar', 'show', 'viagem', 'festa', 'cerveja', 'balada', 'ingresso', 'passeio', 'hotel', 'airbnb', 'jogo', 'teatro', 'praia'] },
+  { name: 'Saúde', emoji: '💊', icon: 'heart', color: '#14b8a6', keywords: ['farmacia', 'remedio', 'medico', 'consulta', 'exame', 'dentista', 'academia', 'plano de saude', 'hospital', 'terapia', 'psicologo', 'drogaria'] },
+  { name: 'Assinaturas', emoji: '📺', icon: 'tv', color: '#eab308', keywords: ['netflix', 'spotify', 'prime video', 'amazon prime', 'disney', 'hbo', 'youtube', 'assinatura', 'icloud', 'chatgpt', 'globoplay', 'deezer', 'streaming'] },
+  { name: 'Compras', emoji: '🛍️', icon: 'bag', color: '#d946ef', keywords: ['roupa', 'shopping', 'amazon', 'mercado livre', 'shopee', 'presente', 'tenis', 'eletronico', 'magalu', 'shein', 'sapato'] },
+  { name: 'Educação', emoji: '📚', icon: 'grad', color: '#06b6d4', keywords: ['curso', 'livro', 'faculdade', 'escola', 'mensalidade', 'udemy', 'alura', 'material escolar', 'idiomas', 'ingles'] },
+  { name: 'Renda', emoji: '💼', icon: 'briefcase', color: '#22c55e', keywords: ['salario', 'freela', 'freelance', 'pix recebido', 'venda', 'reembolso', 'rendimento', 'dividendos', 'bonus', 'pagamento recebido', 'decimo terceiro', 'ferias'] },
+  { name: 'Geral', emoji: '📌', icon: 'tag', color: '#71717a', keywords: [] },
 ]
 
 export const CATEGORY_NAMES = CATEGORIES.map((c) => c.name)
 
-const FALLBACK: CategoryDef = { name: 'Geral', emoji: '📌', color: '#cfc6dc', keywords: [] }
+const FALLBACK: CategoryDef = { name: 'Geral', emoji: '📌', icon: 'tag', color: '#71717a', keywords: [] }
 
 export function normalize(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()

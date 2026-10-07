@@ -15,8 +15,8 @@ export type Partnership = {
   incoming: boolean
 }
 
-const card = 'rounded-3xl border border-line bg-surface/90 backdrop-blur-sm shadow-[0_8px_30px_-12px_rgba(0,0,0,0.35)] h-fit animate-fade-up'
-const btn = 'inline-flex items-center justify-center gap-2 rounded-2xl px-3 h-10 text-sm font-medium transition-all active:scale-[0.97] disabled:opacity-50'
+const card = 'flex flex-col rounded-xl border border-line bg-surface shadow-[var(--shadow)] animate-fade-up'
+const btn = 'inline-flex items-center justify-center gap-2 rounded-xl px-3 h-10 text-sm font-medium transition-all active:scale-[0.97] disabled:opacity-50'
 const btnPrimary = `${btn} bg-accent text-accent-ink hover:bg-accent-strong`
 const btnGhost = `${btn} border border-line text-ink/90 hover:bg-surface-2`
 
@@ -107,7 +107,7 @@ export default function ConnectionsPanel({ onPartnersChange }: { onPartnersChang
       {/* TELEGRAM */}
       <div className={card}>
         <div className="p-6 border-b border-line">
-          <h3 className="font-display text-lg leading-tight tracking-tight flex items-center gap-2">
+          <h3 className="text-[15px] font-semibold tracking-tight flex items-center gap-2">
             <Send className="h-4 w-4 text-accent" /> Telegram
           </h3>
           <p className="text-sm text-muted mt-2">Registre despesas mandando mensagem para @{BOT_USERNAME}.</p>
@@ -148,7 +148,7 @@ export default function ConnectionsPanel({ onPartnersChange }: { onPartnersChang
       {/* PARCERIAS */}
       <div className={card}>
         <div className="p-6 border-b border-line">
-          <h3 className="font-display text-lg leading-tight tracking-tight flex items-center gap-2">
+          <h3 className="text-[15px] font-semibold tracking-tight flex items-center gap-2">
             <UserPlus className="h-4 w-4 text-accent" /> Parceiros de divisão
           </h3>
           <p className="text-sm text-muted mt-2">Só parceiros aceitos aparecem em &quot;Dividir despesa&quot;.</p>
@@ -158,7 +158,7 @@ export default function ConnectionsPanel({ onPartnersChange }: { onPartnersChang
             <input
               type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
               placeholder="e-mail do parceiro"
-              className="flex h-9 w-full rounded-2xl border border-line bg-surface-2/60 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-accent/60"
+              className="flex h-9 w-full rounded-xl border border-line bg-surface-2/60 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-accent/60"
             />
             <button type="submit" disabled={pLoading} className={btnPrimary}>Convidar</button>
           </form>

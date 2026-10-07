@@ -7,6 +7,7 @@ import { CATEGORIES, detectCategory, type EntryType } from '../lib/categories'
 import { todayBR } from '../lib/dates'
 import { play } from '../lib/sounds'
 import type { Partnership } from './ConnectionsPanel'
+import { CategoryIcon } from './CategoryIcon'
 import { Segmented, Sheet, cx, inputClass, primaryButton } from './ui'
 
 type Props = {
@@ -81,14 +82,14 @@ export default function TransactionSheet({ open, onClose, userId, partners, onSa
           value={type}
           onChange={changeType}
           options={[
-            { value: 'saida', label: <span className="inline-flex items-center gap-1.5"><ArrowDownRight className="h-4 w-4" /> Saída</span>, activeClass: 'bg-expense text-[#2a1620] shadow' },
-            { value: 'entrada', label: <span className="inline-flex items-center gap-1.5"><ArrowUpRight className="h-4 w-4" /> Entrada</span>, activeClass: 'bg-income text-[#10261c] shadow' },
+            { value: 'saida', label: <span className="inline-flex items-center gap-1.5"><ArrowDownRight className="h-4 w-4" /> Saída</span>, activeClass: 'bg-surface text-expense shadow-[var(--shadow)]' },
+            { value: 'entrada', label: <span className="inline-flex items-center gap-1.5"><ArrowUpRight className="h-4 w-4" /> Entrada</span>, activeClass: 'bg-surface text-income shadow-[var(--shadow)]' },
           ]}
         />
 
         <label className="block text-center">
-          <span className="text-xs uppercase tracking-[0.2em] text-muted">Valor</span>
-          <div className={cx('mt-1 flex items-baseline justify-center gap-2 font-display', isIn ? 'text-income' : 'text-expense')}>
+          <span className="text-xs text-muted">Valor</span>
+          <div className={cx('mt-1 flex items-baseline justify-center gap-2 font-semibold tracking-tight', isIn ? 'text-income' : 'text-expense')}>
             <span className="text-2xl opacity-70">R$</span>
             <input
               autoFocus inputMode="decimal" placeholder="0,00" value={amount}
@@ -109,19 +110,18 @@ export default function TransactionSheet({ open, onClose, userId, partners, onSa
                 key={c.name} type="button"
                 onClick={() => { play('tap'); setCategory(c.name); setCategoryTouched(true) }}
                 className={cx(
-                  'inline-flex items-center gap-1.5 rounded-full border px-3 h-9 text-sm transition-all active:scale-95',
-                  category === c.name ? 'border-transparent text-[#1e1828] shadow' : 'border-line text-muted hover:text-ink',
+                  'inline-flex items-center gap-1.5 rounded-lg border py-1 pl-1 pr-2.5 text-sm transition-all active:scale-95',
+                  category === c.name ? 'border-accent bg-accent/10 text-ink' : 'border-line text-muted hover:text-ink',
                 )}
-                style={category === c.name ? { background: c.color } : undefined}
               >
-                <span>{c.emoji}</span>{c.name}
+                <CategoryIcon category={c.name} size="sm" />{c.name}
               </button>
             ))}
           </div>
         </div>
 
         {!isIn && (
-          <div className="rounded-2xl border border-line bg-surface-2/50 p-4 space-y-3">
+          <div className="rounded-xl border border-line p-3.5 space-y-3">
             <label className="flex items-center justify-between gap-3 cursor-pointer">
               <span className="flex items-center gap-2 text-sm"><Users className="h-4 w-4 text-accent" /> Dividir 50% com parceiro</span>
               <input type="checkbox" checked={split} onChange={(e) => { play('toggle'); setSplit(e.target.checked) }} className="h-5 w-5 accent-[var(--accent)]" />
