@@ -143,7 +143,7 @@ export function helpMessage(voice = false): string {
     '• <code>mercado 120 ontem</code> → com data (<code>ontem</code>, <code>dia 3</code>, <code>05/10</code>)',
     '• <code>s tv 1200 10x</code> → parcelado (cria as 10 parcelas)',
     '• <code>pizza 60 #lazer</code> → força a categoria',
-    ...(voice ? ['• 🎙️ Mande um <b>áudio</b> ou escreva livre: “gastei 45 no mercado ontem”'] : []),
+    ...(voice ? ['• 🎙️ Mande um <b>áudio</b> ou escreva livre: “gastei 45 no mercado ontem”, “paguei 200 de luz dia 5”, “pizza 60 sexta passada”'] : []),
     '',
     'Depois de registrar, use os botões para trocar a categoria, mudar para ontem, dividir ou desfazer.',
     '',
