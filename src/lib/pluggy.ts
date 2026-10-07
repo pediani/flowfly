@@ -31,7 +31,24 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export type PluggyItem = { id: string; status: string; executionStatus?: string; lastUpdatedAt?: string; connector?: { name?: string } }
-export type PluggyAccount = { id: string; type: 'BANK' | 'CREDIT' | string; subtype?: string; name?: string; marketingName?: string; number?: string; owner?: string }
+export type PluggyAccount = {
+  id: string
+  type: 'BANK' | 'CREDIT' | string
+  subtype?: string
+  name?: string
+  marketingName?: string
+  number?: string
+  owner?: string
+  balance?: number
+  updatedAt?: string
+  creditData?: {
+    creditLimit?: number | null
+    availableCreditLimit?: number | null
+    balanceDueDate?: string | null
+    balanceCloseDate?: string | null
+    brand?: string | null
+  } | null
+}
 export type PluggyTx = {
   id: string
   description: string
@@ -73,4 +90,18 @@ export async function ensureWebhook(url: string, secret: string) {
   const list = Array.isArray(r) ? r : r.results || []
   if (list.some((w) => w.url === url && (w.event === 'transactions/created' || w.event === 'all'))) return
   await call('/webhooks', { method: 'POST', body: JSON.stringify({ url, event: 'transactions/created', headers: { 'x-flowfly-secret': secret } }) })
+}
+
+/** Saldo exibido no painel (conta: saldo disponível · cartão: fatura atual) */
+export type BankBalance = {
+  institution: string
+  type: 'Conta' | 'Cartão'
+  name: string
+  last4: string
+  balance: number          // conta: saldo disponível · cartão: fatura atual
+  creditLimit?: number | null
+  available?: number | null
+  dueDate?: string | null
+  closeDate?: string | null
+  updatedAt?: string | null
 }

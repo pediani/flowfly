@@ -178,7 +178,7 @@ function NavButton({ label, icon: Icon, active, onClick }: { label: string; icon
   return (
     <button onClick={onClick} className={cx('flex flex-col items-center gap-1 rounded-xl py-1.5 text-[10px] font-medium transition active:scale-90', active ? 'text-ink' : 'text-muted')}>
       <Icon className={cx('h-5 w-5', active && 'text-accent')} strokeWidth={active ? 2.25 : 1.75} />
-      {label.split(' ')[0]}
+      {label === 'Contas fixas' ? 'Fixas' : label}
     </button>
   )
 }

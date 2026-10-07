@@ -21,6 +21,7 @@ import { Legend, MonthChart, ProjectionChart } from './Charts'
 import { TransactionItem } from './TransactionItem'
 import GoalsCard, { type Goal } from './GoalsCard'
 import SettlementCard from './SettlementCard'
+import RealBalanceCard from './RealBalanceCard'
 import { Card, CardHeader, EmptyState, Money, cx } from './ui'
 
 type Props = {
@@ -70,15 +71,18 @@ export default function Dashboard(p: Props) {
 
   return (
     <div className="space-y-4">
-      {/* SALDO DO MÊS */}
+      {/* SALDO REAL (bancos conectados) */}
+      {isCurrent && <RealBalanceCard monthResult={s.saldo} monthLabelText={monthLabel(monthKey)} refreshKey={p.settlementKey} />}
+
+      {/* RESULTADO DO MÊS */}
       <Card className="p-5 md:p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="text-sm text-muted">Saldo de {monthLabel(monthKey)}</p>
+            <p className="text-sm text-muted">Resultado de {monthLabel(monthKey)} <span className="text-xs">(entradas − saídas)</span></p>
             <Money value={s.saldo} className={cx('mt-1 block text-4xl font-semibold tracking-tight md:text-5xl', s.saldo < 0 && 'text-expense')} />
           </div>
           <div className="flex flex-wrap gap-2 text-xs">
-            <Pill icon={Wallet}>Saldo geral <b className="tabular">{formatBRL(data.overall)}</b></Pill>
+            <Pill icon={Wallet}>Acumulado no app <b className="tabular">{formatBRL(data.overall)}</b></Pill>
             {mp.isCurrent && (
               <Pill icon={Sparkles} className={mp.projectedSaldo >= 0 ? 'text-income' : 'text-expense'}>
                 Previsão <b className="tabular">{formatBRL(mp.projectedSaldo)}</b>
