@@ -38,11 +38,19 @@ export default function Home() {
   }, [])
 
   const loadTransactions = useCallback(async () => {
-    const { data } = await supabase.from('transactions').select('*')
-      .neq('type', 'ignorado')
-      .order('date', { ascending: false })
-      .order('created_at', { ascending: false, nullsFirst: false })
-    setTxs((data as Tx[]) || [])
+    // O Supabase devolve no máximo 1000 linhas por consulta: busca em páginas
+    const all: Tx[] = []
+    for (let from = 0; from < 20000; from += 1000) {
+      const { data } = await supabase.from('transactions').select('*')
+        .neq('type', 'ignorado')
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: true })
+        .range(from, from + 999)
+      all.push(...((data as Tx[]) || []))
+      if (!data || data.length < 1000) break
+    }
+    setTxs(all)
     setSettlementKey((k) => k + 1)
   }, [])
 

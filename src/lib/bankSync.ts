@@ -7,7 +7,7 @@ import { getItem, listAccounts, listTransactions, type PluggyAccount, type Plugg
 import { escapeHtml, type Keyboard } from './telegramBot'
 import { sendMessage } from './telegramApi'
 
-export type BankConnection = { id: string; user_id: string; item_id: string; institution: string | null; last_sync_at: string | null }
+export type BankConnection = { id: string; user_id: string; item_id: string; institution: string | null; last_sync_at: string | null; created_at?: string | null }
 
 // Movimentações que não são gasto/receita de verdade (evita contar duas vezes)
 const SKIP_CATEGORY = /credit card payment|same person|transfer.*(own|same)|investment|savings/i
@@ -119,13 +119,16 @@ export async function syncConnection(db: Db, conn: BankConnection, opts: { initi
   // Corrige lançamentos importados antes com o nome genérico ("MeuPluggy · Conta 1234")
   if (conn.institution !== institution) await relabel(db, conn.user_id, accounts, conn.institution, institution)
 
-  // Primeira vez: últimos N dias. Depois: só o que a Pluggy criou desde a última sincronização (com folga).
+  // Nunca importa nada anterior a 30 dias antes da conexão. Sem isso, como a Pluggy "cria" todo o
+  // histórico (até 12 meses) no dia em que o banco é conectado, o filtro por createdAt traria tudo.
+  const connectedOn = conn.created_at ? conn.created_at.slice(0, 10) : todayBR()
+  const floor = addDays(connectedOn, -(opts.initialDays ?? 30))
   const filter = conn.last_sync_at
-    ? { createdAtFrom: new Date(Date.parse(conn.last_sync_at) - 2 * 86400000).toISOString() }
-    : { dateFrom: addDays(todayBR(), -(opts.initialDays ?? 30)) }
+    ? { dateFrom: floor, createdAtFrom: new Date(Date.parse(conn.last_sync_at) - 2 * 86400000).toISOString() }
+    : { dateFrom: floor }
 
   const incoming: { t: PluggyTx; a: PluggyAccount }[] = []
-  for (const a of accounts) for (const t of await listTransactions(a.id, filter)) incoming.push({ t, a })
+  for (const a of accounts) for (const t of await listTransactions(a.id, filter)) if (t.date.slice(0, 10) >= floor) incoming.push({ t, a })
 
   const result: SyncResult = { imported: [], matched: 0, skipped: 0, institution }
   if (incoming.length) {
