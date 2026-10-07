@@ -157,13 +157,14 @@ export type MonthProjection = {
   projectedEntradas: number
   projectedSaidas: number
   projectedSaldo: number
-  dailyVariable: number
+  /** Média mensal de gastos variáveis dos meses anteriores (informativo, não entra na projeção) */
+  avgMonthlyVariable: number | null
   remainingRecurring: Recurring[]
 }
 
 /**
- * Saldo do mês dia a dia. No mês atual, projeta até o fim:
- * lançado até hoje + contas fixas que ainda vencem + média diária de gastos variáveis × dias restantes.
+ * Saldo do mês dia a dia. No mês atual, projeta até o fim só com o que é conhecido:
+ * lançado até hoje + contas fixas que ainda vencem. Gastos avulsos não são extrapolados.
  */
 export function monthProjection(txs: Tx[], recurring: Recurring[], key: string, today = todayBR()): MonthProjection {
   const total = daysInMonth(key)
@@ -184,15 +185,7 @@ export function monthProjection(txs: Tx[], recurring: Recurring[], key: string, 
     ? pendingRecurring(txs, recurring, key).filter((r) => recurringDay(r, key) > todayDay)
     : []
 
-  let dailyVariable = 0
-  if (isCurrent || isFuture) {
-    const hist = avgVariableSpending(txs, key, recurring)
-    const cur = todayDay > 0 ? variableSpending(txs, key, recurring) / todayDay : 0
-    // Mistura o ritmo do mês com a média histórica, dando mais peso ao mês conforme ele avança
-    // (evita que uma compra grande no início do mês distorça a projeção)
-    const w = todayDay / total
-    dailyVariable = hist === null ? cur : w * cur + (1 - w) * (hist / total)
-  }
+  const avgMonthlyVariable = avgVariableSpending(txs, key, recurring)
 
   const series: DayPoint[] = []
   let acc = 0
@@ -203,18 +196,16 @@ export function monthProjection(txs: Tx[], recurring: Recurring[], key: string, 
       p.realizado = round2(acc)
       if (d === todayDay && todayDay < total) p.projetado = p.realizado
     } else {
-      acc -= dailyVariable
       for (const r of remainingRecurring) if (recurringDay(r, key) === d) acc += r.type === 'entrada' ? n(r.amount) : -n(r.amount)
       p.projetado = round2(acc)
     }
     series.push(p)
   }
 
-  const remDays = total - todayDay
   const recIn = remainingRecurring.filter((r) => r.type === 'entrada').reduce((a, r) => a + n(r.amount), 0)
   const recOut = remainingRecurring.filter((r) => r.type === 'saida').reduce((a, r) => a + n(r.amount), 0)
   const projectedEntradas = s.entradas + recIn
-  const projectedSaidas = s.saidas + recOut + dailyVariable * remDays
+  const projectedSaidas = s.saidas + recOut
 
   return {
     series,
@@ -223,7 +214,7 @@ export function monthProjection(txs: Tx[], recurring: Recurring[], key: string, 
     projectedEntradas: round2(projectedEntradas),
     projectedSaidas: round2(projectedSaidas),
     projectedSaldo: round2(projectedEntradas - projectedSaidas),
-    dailyVariable: round2(dailyVariable),
+    avgMonthlyVariable: avgMonthlyVariable === null ? null : round2(avgMonthlyVariable),
     remainingRecurring,
   }
 }
@@ -238,7 +229,7 @@ export type FuturePoint = {
   realizado: boolean
 }
 
-/** Mês atual (projetado) + próximos meses: contas fixas + média de gastos variáveis + parcelas. */
+/** Mês atual (projetado) + próximos meses: só contas fixas e parcelas (compromissos conhecidos). */
 export function futureProjection(
   txs: Tx[], recurring: Recurring[], installments: Installment[], months = 6, today = todayBR()
 ): FuturePoint[] {
@@ -256,13 +247,10 @@ export function futureProjection(
 
   const recIn = recurring.filter((r) => r.type === 'entrada').reduce((a, r) => a + n(r.amount), 0)
   const recOut = recurring.filter((r) => r.type === 'saida').reduce((a, r) => a + n(r.amount), 0)
-  // Média dos meses completos anteriores; sem histórico, usa o ritmo projetado do mês atual
-  const variable = avgVariableSpending(txs, cur, recurring) ?? mp.dailyVariable * daysInMonth(cur)
-
   for (let i = 1; i < months; i++) {
     const k = addMonths(cur, i)
     const entradas = recIn
-    const saidas = recOut + variable + installmentsDue(installments, k)
+    const saidas = recOut + installmentsDue(installments, k)
     acumulado += entradas - saidas
     out.push({
       key: k, label: monthLabel(k, 'short'),
@@ -311,7 +299,7 @@ export function buildInsights(
   if (mp.isCurrent && (s.count > 0 || recurring.length) && mp.projectedSaldo < 0) {
     out.push({
       id: 'neg', level: 'danger', emoji: '🚨', title: 'Mês deve fechar no vermelho',
-      text: `No ritmo atual, ${monthLabel(key)} termina com ${formatBRL(mp.projectedSaldo)}. Segure os gastos variáveis (média de ${formatBRL(mp.dailyVariable)}/dia).`,
+      text: `Com as contas fixas que ainda vencem, ${monthLabel(key)} termina com ${formatBRL(mp.projectedSaldo)}.`,
     })
   }
 

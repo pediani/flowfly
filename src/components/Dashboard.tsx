@@ -103,7 +103,7 @@ export default function Dashboard(p: Props) {
             title={`${monthLabel(monthKey)} dia a dia`}
             icon={<TrendingUp className="h-4 w-4 text-muted" />}
             subtitle={mp.isCurrent
-              ? <>Projeção: lançado + contas fixas a vencer + gasto variável de <b className="text-ink">{formatBRL(mp.dailyVariable)}/dia</b></>
+              ? <>Projeção: lançado até hoje + contas fixas a vencer{mp.avgMonthlyVariable ? <> · gastos avulsos não são estimados (sua média: <b className="text-ink">{formatBRL(mp.avgMonthlyVariable)}/mês</b>)</> : null}</>
               : mp.isFuture ? 'Mês futuro: veja a projeção dos próximos meses.' : 'Saldo acumulado ao longo do mês.'}
           />
           {s.count || mp.isCurrent ? (
@@ -124,7 +124,7 @@ export default function Dashboard(p: Props) {
         <CardHeader
           title="Projeção dos próximos meses"
           icon={<Sparkles className="h-4 w-4 text-muted" />}
-          subtitle="Contas fixas + média dos gastos variáveis + parcelas. A linha é o saldo acumulado."
+          subtitle="Só compromissos conhecidos: contas fixas e parcelas. A linha é o saldo acumulado."
         />
         <div className="h-[250px] px-2"><ProjectionChart data={data.future} /></div>
         <Legend items={[{ color: 'var(--income)', label: 'Entradas' }, { color: 'var(--expense)', label: 'Saídas' }, { color: 'var(--accent)', label: 'Saldo acumulado' }]} />
