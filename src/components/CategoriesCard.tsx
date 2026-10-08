@@ -19,23 +19,33 @@ export function CategoryForm({ initial, onSaved, onCancel }: { initial?: Categor
   const [keywords, setKeywords] = useState((initial?.keywords || []).join(', '))
   const [error, setError] = useState<string | null>(null)
 
-  async function save(e: React.FormEvent) {
-    e.preventDefault()
+  // Não é <form>: este bloco aparece dentro do formulário do lançamento e um
+  // form aninhado disparava o envio (e o fechamento) do lançamento junto.
+  async function save(e?: React.SyntheticEvent) {
+    e?.preventDefault()
+    e?.stopPropagation()
     const n = name.trim()
     if (!n) return
     if (!initial && CATEGORIES.some((c) => c.name.toLowerCase() === n.toLowerCase())) { setError('Essa categoria já existe.'); return }
-    const row = { name: n, emoji: emoji.trim() || '🏷️', icon, color, type: 'saida', keywords: keywords.split(',').map((k) => k.trim().toLowerCase()).filter(Boolean) }
+    const { data: { user } } = await supabase.auth.getUser()
+    const row = { user_id: user?.id, name: n, emoji: emoji.trim() || '🏷️', icon, color, type: 'saida', keywords: keywords.split(',').map((k) => k.trim().toLowerCase()).filter(Boolean) }
     const { error: err } = initial
       ? await supabase.from('categories').update(row).eq('id', initial.id)
       : await supabase.from('categories').insert(row)
-    if (err) { play('error'); setError(err.message.includes('duplicate') ? 'Essa categoria já existe.' : err.message); return }
+    if (err) {
+      play('error')
+      setError(/duplicate|unique/i.test(err.message) ? 'Essa categoria já existe.'
+        : /column|schema cache|does not exist/i.test(err.message) ? 'Falta rodar a migração 20261013_categorias_notas no Supabase.'
+        : err.message)
+      return
+    }
     // renomear: atualiza os lançamentos que usavam o nome antigo
     if (initial && initial.name !== n) await supabase.from('transactions').update({ category: n }).eq('category', initial.name)
     play('success'); onSaved(n)
   }
 
   return (
-    <form onSubmit={save} className="space-y-2.5 rounded-xl border border-line p-3 text-sm animate-fade-in">
+    <div onKeyDown={(e) => { if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') save(e) }} className="space-y-2.5 rounded-xl border border-line p-3 text-sm animate-fade-in">
       <div className="flex gap-2">
         <input value={emoji} onChange={(e) => setEmoji(e.target.value)} maxLength={4} className="h-9 w-12 rounded-lg border border-line bg-surface text-center" title="Emoji (usado no Telegram)" />
         <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome (ex.: Pet)" className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 focus:border-accent focus:outline-none" />
@@ -51,10 +61,10 @@ export function CategoryForm({ initial, onSaved, onCancel }: { initial?: Categor
       <input value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder="Palavras-chave para reconhecer sozinho (ex.: petz, ração, veterinário)" className="h-9 w-full rounded-lg border border-line bg-surface px-3 text-xs focus:border-accent focus:outline-none" />
       {error && <p className="text-xs text-expense">{error}</p>}
       <div className="flex gap-2">
-        <button className="h-9 flex-1 rounded-lg bg-accent text-sm font-medium text-accent-ink">{initial ? 'Salvar' : 'Criar categoria'}</button>
+        <button type="button" onClick={save} className="h-9 flex-1 rounded-lg bg-accent text-sm font-medium text-accent-ink">{initial ? 'Salvar' : 'Criar categoria'}</button>
         {onCancel && <button type="button" onClick={onCancel} className="h-9 rounded-lg border border-line px-3 text-sm">Cancelar</button>}
       </div>
-    </form>
+    </div>
   )
 }
 

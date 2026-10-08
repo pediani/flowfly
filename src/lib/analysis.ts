@@ -126,6 +126,7 @@ export function detectAnomalies(txs: Tx[], today = todayBR()): Anomaly[] {
   }
   // gasto único muito acima do habitual da categoria
   for (const t of recent) {
+    if (!t.category || t.category === 'Geral') continue // Pix/transferências sem categoria geram alarme falso
     const same = hist.filter((h) => h.category === t.category).map((h) => n(h.amount)).sort((a, b) => a - b)
     if (same.length < 4) continue
     const median = same[Math.floor(same.length / 2)]

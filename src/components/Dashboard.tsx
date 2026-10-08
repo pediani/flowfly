@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import {
   ArrowDownRight, ArrowUpRight, ChevronRight, CircleCheck, Handshake, History, Info, OctagonAlert, Pencil, Plus,
-  Receipt, Sparkles, Target, TrendingUp, TriangleAlert, Wallet, type LucideIcon,
+  Receipt, Sparkles, Target, TrendingUp, TriangleAlert, type LucideIcon,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import { supabase } from '../lib/supabase'
@@ -24,6 +24,8 @@ import GoalsCard, { type Goal } from './GoalsCard'
 import SettlementCard from './SettlementCard'
 import RealBalanceCard from './RealBalanceCard'
 import NetWorthCard from './NetWorthCard'
+import UpcomingCard from './UpcomingCard'
+import { useBankBalances } from './useBankBalances'
 import { Card, CardHeader, EmptyState, Money, Sheet, cx } from './ui'
 
 type Props = {
@@ -73,13 +75,18 @@ export default function Dashboard(p: Props) {
   }, [txs, recurring, installments, budgets, monthKey, today])
 
   const { s, prev, mp } = data
+  const [section, setSection] = useState<'resumo' | 'gastos' | 'futuro' | 'patrimonio'>('resumo')
+  const accounts = useBankBalances(p.settlementKey)
+  const hasBank = !!accounts?.some((a) => a.type === 'Conta')
   const delta = prev.saidas > 0 ? ((s.saidas - prev.saidas) / prev.saidas) * 100 : null
 
   return (
     <div className="space-y-4">
-      {/* SALDO REAL (bancos conectados) */}
-      {isCurrent && <RealBalanceCard txs={txs} recurring={recurring} refreshKey={p.settlementKey} />}
-
+      {/* TOPO: o que mais importa (no PC, em duas colunas) */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          {isCurrent && hasBank ? <RealBalanceCard txs={txs} recurring={recurring} refreshKey={p.settlementKey} /> : (
+            <>
       {/* RESULTADO DO MÊS */}
       <Card className="p-5 md:p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -88,7 +95,6 @@ export default function Dashboard(p: Props) {
             <Money value={s.saldo} className={cx('mt-1 block text-2xl font-semibold tracking-tight md:text-3xl', s.saldo < 0 && 'text-expense')} />
           </div>
           <div className="flex flex-wrap gap-2 text-xs">
-            <Pill icon={Wallet}>Acumulado no app <b className="tabular">{formatBRL(data.overall)}</b></Pill>
             {mp.isCurrent && (
               <Pill icon={Sparkles} className={mp.projectedSaldo >= 0 ? 'text-income' : 'text-expense'}>
                 Previsão <b className="tabular">{formatBRL(mp.projectedSaldo)}</b>
@@ -102,7 +108,53 @@ export default function Dashboard(p: Props) {
           </div>
         </div>
       </Card>
+            </>
+          )}
+        </div>
+        <div className="hidden space-y-4 lg:block">
+          {isCurrent && <UpcomingCard txs={txs} recurring={recurring} refreshKey={p.settlementKey} />}
+          {data.insights.length > 0 && <AlertsColumn items={data.insights} />}
+        </div>
+      </div>
 
+      {/* celular: avisos em carrossel */}
+      <div className="lg:hidden">{data.insights.length > 0 && <Insights items={data.insights} />}</div>
+
+      {/* PC: o resto organizado em abas */}
+      <div className="hidden gap-1 rounded-xl bg-surface-2 p-1 lg:inline-flex">
+        {SECTIONS.map((x) => (
+          <button key={x.id} onClick={() => { play('tap'); setSection(x.id) }} className={cx('h-9 rounded-lg px-4 text-sm font-medium transition', section === x.id ? 'bg-surface text-ink shadow-[var(--shadow)]' : 'text-muted hover:text-ink')}>
+            {x.label}
+          </button>
+        ))}
+      </div>
+
+      <section className={cx('space-y-4', section !== 'resumo' && 'lg:hidden')}>
+      {isCurrent && hasBank && (
+        <>
+      {/* RESULTADO DO MÊS */}
+      <Card className="p-5 md:p-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-sm text-muted">Resultado de {monthLabel(monthKey)} <span className="text-xs">(entradas − saídas)</span></p>
+            <Money value={s.saldo} className={cx('mt-1 block text-2xl font-semibold tracking-tight md:text-3xl', s.saldo < 0 && 'text-expense')} />
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            {mp.isCurrent && (
+              <Pill icon={Sparkles} className={mp.projectedSaldo >= 0 ? 'text-income' : 'text-expense'}>
+                Previsão <b className="tabular">{formatBRL(mp.projectedSaldo)}</b>
+              </Pill>
+            )}
+            {delta !== null && s.saidas > 0 && (
+              <Pill icon={delta > 0 ? ArrowUpRight : ArrowDownRight} className={delta > 0 ? 'text-expense' : 'text-income'}>
+                Saídas {delta > 0 ? '+' : ''}{Math.round(delta)}% vs {monthLabel(prev.key, 'short')}
+              </Pill>
+            )}
+          </div>
+        </div>
+      </Card>
+        </>
+      )}
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Kpi label="Entradas" value={s.entradas} icon={ArrowUpRight} color="text-income" delay={40} />
@@ -110,52 +162,6 @@ export default function Dashboard(p: Props) {
         <Kpi label="A receber" value={s.aReceber} icon={Handshake} color="text-accent" delay={100} hint="Metade das despesas que você dividiu" />
         <Kpi label="A pagar" value={data.debts} icon={Handshake} color="text-warn" delay={130} hint="Pendências com seu parceiro" />
       </div>
-
-      {/* AVISOS */}
-      {data.insights.length > 0 && <Insights items={data.insights} />}
-
-      {/* MÊS + CATEGORIAS (mesma altura) */}
-      <div className="grid gap-4 lg:grid-cols-5">
-        <Card className="lg:col-span-3" delay={100}>
-          <CardHeader
-            title={`${monthLabel(monthKey)} dia a dia`}
-            icon={<TrendingUp className="h-4 w-4 text-muted" />}
-            subtitle={mp.isCurrent
-              ? <>Projeção: lançado até hoje + contas fixas a vencer{mp.avgMonthlyVariable ? <> · gastos avulsos não são estimados (sua média: <b className="text-ink">{formatBRL(mp.avgMonthlyVariable)}/mês</b>)</> : null}</>
-              : mp.isFuture ? 'Mês futuro: veja a projeção dos próximos meses.' : 'Saldo acumulado ao longo do mês.'}
-          />
-          {s.count || mp.isCurrent ? (
-            <>
-              <div className="relative min-h-[240px] flex-1 px-2">
-                <div className="absolute inset-0 px-2"><MonthChart series={mp.series} monthShort={monthLabel(monthKey, 'short')} /></div>
-              </div>
-              <Legend items={[{ color: 'var(--accent)', label: 'Realizado' }, ...(mp.isCurrent ? [{ color: 'var(--muted)', label: 'Projeção até o fim do mês', dashed: true }] : [])]} />
-            </>
-          ) : <EmptyState icon={Receipt} title="Sem lançamentos neste mês" />}
-        </Card>
-
-        <CategoryCard {...p} cats={data.cats} totalOut={s.saidas} />
-      </div>
-
-      {/* PROJEÇÃO 6 MESES */}
-      <Card delay={140}>
-        <CardHeader
-          title="Projeção dos próximos meses"
-          icon={<Sparkles className="h-4 w-4 text-muted" />}
-          subtitle="Só compromissos conhecidos: contas fixas e parcelas agendadas. A linha é o saldo acumulado."
-        />
-        <div className="h-[250px] px-2"><ProjectionChart data={data.future} /></div>
-        <Legend items={[{ color: 'var(--income)', label: 'Entradas' }, { color: 'var(--expense)', label: 'Saídas' }, { color: 'var(--accent)', label: 'Saldo acumulado' }]} />
-      </Card>
-
-      {isCurrent && <NetWorthCard refreshKey={p.settlementKey} />}
-
-      {/* METAS + ACERTO */}
-      <div className={cx('grid gap-4', p.partnerEmail && 'lg:grid-cols-2')}>
-        <GoalsCard goals={p.goals} onChange={p.onGoalsChange} />
-        {p.partnerEmail && <SettlementCard partnerEmail={p.partnerEmail} refreshKey={p.settlementKey} onSettled={p.onSettled} />}
-      </div>
-
       {/* ÚLTIMOS + CONSOLIDADO (mesma altura) */}
       <div className="grid gap-4 lg:grid-cols-2">
         <Card delay={170}>
@@ -198,7 +204,83 @@ export default function Dashboard(p: Props) {
           ) : <EmptyState icon={History} title="Sem histórico ainda" text="Os meses anteriores aparecem aqui conforme você usa o app." />}
         </Card>
       </div>
+      </section>
+      <section className={cx('space-y-4', section !== 'gastos' && 'lg:hidden')}>
+      {/* MÊS + CATEGORIAS (mesma altura) */}
+      <div className="grid gap-4 lg:grid-cols-5">
+        <Card className="lg:col-span-3" delay={100}>
+          <CardHeader
+            title={`${monthLabel(monthKey)} dia a dia`}
+            icon={<TrendingUp className="h-4 w-4 text-muted" />}
+            subtitle={mp.isCurrent
+              ? <>Projeção: lançado até hoje + contas fixas a vencer{mp.avgMonthlyVariable ? <> · gastos avulsos não são estimados (sua média: <b className="text-ink">{formatBRL(mp.avgMonthlyVariable)}/mês</b>)</> : null}</>
+              : mp.isFuture ? 'Mês futuro: veja a projeção dos próximos meses.' : 'Saldo acumulado ao longo do mês.'}
+          />
+          {s.count || mp.isCurrent ? (
+            <>
+              <div className="relative min-h-[240px] flex-1 px-2">
+                <div className="absolute inset-0 px-2"><MonthChart series={mp.series} monthShort={monthLabel(monthKey, 'short')} /></div>
+              </div>
+              <Legend items={[{ color: 'var(--accent)', label: 'Realizado' }, ...(mp.isCurrent ? [{ color: 'var(--muted)', label: 'Projeção até o fim do mês', dashed: true }] : [])]} />
+            </>
+          ) : <EmptyState icon={Receipt} title="Sem lançamentos neste mês" />}
+        </Card>
+
+        <CategoryCard {...p} cats={data.cats} totalOut={s.saidas} />
+      </div>
+      </section>
+      <section className={cx('space-y-4', section !== 'futuro' && 'lg:hidden')}>
+      {/* PROJEÇÃO 6 MESES */}
+      <Card delay={140}>
+        <CardHeader
+          title="Projeção dos próximos meses"
+          icon={<Sparkles className="h-4 w-4 text-muted" />}
+          subtitle="Só compromissos conhecidos: contas fixas e parcelas agendadas. A linha é o saldo acumulado."
+        />
+        <div className="h-[250px] px-2"><ProjectionChart data={data.future} /></div>
+        <Legend items={[{ color: 'var(--income)', label: 'Entradas' }, { color: 'var(--expense)', label: 'Saídas' }, { color: 'var(--accent)', label: 'Saldo acumulado' }]} />
+      </Card>
+      </section>
+      <section className={cx('space-y-4', section !== 'patrimonio' && 'lg:hidden')}>
+      {isCurrent && <NetWorthCard refreshKey={p.settlementKey} />}
+      {/* METAS + ACERTO */}
+      <div className={cx('grid gap-4', p.partnerEmail && 'lg:grid-cols-2')}>
+        <GoalsCard goals={p.goals} onChange={p.onGoalsChange} />
+        {p.partnerEmail && <SettlementCard partnerEmail={p.partnerEmail} refreshKey={p.settlementKey} onSettled={p.onSettled} />}
+      </div>
+      </section>
     </div>
+  )
+}
+
+const SECTIONS = [
+  { id: 'resumo', label: 'Resumo do mês' },
+  { id: 'gastos', label: 'Gastos' },
+  { id: 'futuro', label: 'Próximos meses' },
+  { id: 'patrimonio', label: 'Patrimônio e metas' },
+] as const
+
+/** Avisos em coluna (PC): os 3 mais importantes */
+function AlertsColumn({ items }: { items: Insight[] }) {
+  return (
+    <Card className="p-4" delay={60}>
+      <p className="mb-2 text-xs font-medium text-muted">Avisos</p>
+      <ul className="space-y-3">
+        {items.slice(0, 3).map((i) => {
+          const { icon: Icon, color } = LEVEL[i.level]
+          return (
+            <li key={i.id} className="flex gap-2.5">
+              <span className={cx('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', color)}><Icon className="h-3.5 w-3.5" /></span>
+              <div className="min-w-0">
+                <p className="text-sm font-medium leading-tight">{i.title}</p>
+                <p className="mt-0.5 text-xs text-muted">{i.text}</p>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+      {items.length > 3 && <p className="mt-2 text-[11px] text-muted">+{items.length - 3} outro(s) aviso(s)</p>}
+    </Card>
   )
 }
 

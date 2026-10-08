@@ -20,6 +20,7 @@ export default function RealBalanceCard({ txs, recurring, refreshKey }: { txs: T
   const accounts = useBankBalances(refreshKey)
   const [reserve, setReserve] = useState(readReserve)
   const [editingReserve, setEditingReserve] = useState(false)
+  const [showHow, setShowHow] = useState(false)
   const [open, setOpen] = useState<'dias' | 'comprar' | 'contas' | null>(null)
   // simulador
   const [simAmount, setSimAmount] = useState('')
@@ -65,7 +66,8 @@ export default function RealBalanceCard({ txs, recurring, refreshKey }: { txs: T
         <Step icon={ArrowUpRight} label={`Entra até ${d5(safe.until)}`} value={safe.incoming} tone="text-income" hint="contas fixas e lançamentos agendados" />
         <Step icon={ArrowDownRight} label={`Sai até ${d5(safe.until)}`} value={safe.outgoing} tone="text-expense" hint="faturas, contas fixas e agendados" />
       </div>
-      <p className="mt-2 text-[11px] text-muted">
+      <button onClick={() => setShowHow(!showHow)} className="mt-2 text-[11px] font-medium text-accent">{showHow ? 'Ocultar' : 'Como chegamos nesse número?'}</button>
+      {showHow && <p className="mt-1 text-[11px] text-muted">
         É o <b>menor saldo</b> que sua conta terá até {d5(safe.until)} ({formatBRL(safe.flow.min.value)} em {d5(safe.flow.min.date)})
         {' '}menos a reserva de segurança de{' '}
         {editingReserve ? (
@@ -73,7 +75,7 @@ export default function RealBalanceCard({ txs, recurring, refreshKey }: { txs: T
             className="w-20 rounded border border-line bg-surface px-1 text-[11px]" />
         ) : <button onClick={() => setEditingReserve(true)} className="font-medium text-accent underline-offset-2 hover:underline">{formatBRL(reserve)}</button>}.
         {' '}Gastou? Lance no Telegram e o valor já desconta aqui.
-      </p>
+      </p>}
 
       {/* Melhor cartão */}
       {cards[0] && (

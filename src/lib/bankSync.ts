@@ -15,6 +15,12 @@ const SKIP_DESC = /(pagamento|pgto|pag)\.?\s*(de\s*)?(da\s*)?fatura|pagto\.? car
 
 export function shouldSkip(t: PluggyTx, account: PluggyAccount): boolean {
   if (SKIP_CATEGORY.test(t.category || '')) return true
+  // transferência para você mesmo (outra conta sua): o nome do titular aparece na descrição
+  if (account.owner) {
+    const parts = normalize(account.owner).split(/\s+/).filter((w) => w.length > 2)
+    const d = normalize(`${t.description} ${t.descriptionRaw || ''}`)
+    if (parts.length >= 2 && d.includes(parts[0]) && d.includes(parts[parts.length - 1])) return true
+  }
   const d = `${t.description} ${t.descriptionRaw || ''}`
   if (SKIP_DESC.test(d)) return true
   // No cartão, crédito "pagamento recebido" é o pagamento da fatura
@@ -117,6 +123,16 @@ export async function syncConnection(db: Db, conn: BankConnection, opts: { initi
   const item = await getItem(conn.item_id)
   const accounts = await listAccounts(conn.item_id)
   const institution = resolveInstitution(conn.institution, item.connector?.name, accounts)
+  // Transferências entre contas suas importadas antes desta regra: marca como ignoradas
+  const owner = accounts.find((a) => a.owner)?.owner
+  if (owner) {
+    const parts = normalize(owner).split(/\s+/).filter((w) => w.length > 2)
+    if (parts.length >= 2) {
+      await db.from('transactions').update({ type: 'ignorado' })
+        .eq('user_id', conn.user_id).eq('source', 'bank').in('type', ['saida', 'entrada'])
+        .ilike('description', `%${parts[0]}%${parts[parts.length - 1]}%`)
+    }
+  }
   // Corrige lançamentos importados antes com o nome genérico ("MeuPluggy · Conta 1234")
   if (conn.institution !== institution) await relabel(db, conn.user_id, accounts, conn.institution, institution)
 
