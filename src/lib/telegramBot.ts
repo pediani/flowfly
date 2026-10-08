@@ -164,6 +164,9 @@ export function helpMessage(voice = false): string {
     '/posso 2400 10x — simula uma compra',
     '/resumo — balanço do mês e projeção',
     '/semana — resumo dos últimos 7 dias',
+    '/mes — retrospectiva do mês (/mes anterior)',
+    '/assinaturas — cobranças recorrentes e aumentos',
+    '/p quanto gastei de ifood? — pergunte às suas finanças (ou termine a mensagem com ?)',
     '/ultimos — últimos lançamentos',
     '/desfazer — remove o último lançamento feito aqui',
     '/ajuda — esta mensagem',
@@ -276,4 +279,56 @@ export function canBuyMessage(amount: number, installments: number, card: import
   return after.available >= 0
     ? [`✅ <b>Cabe!</b> Compra de ${formatBRL(amount)} ${how}.`, '', `Depois dela, você ainda pode gastar <b>${formatBRL(after.available)}</b> até ${d5(after.until)} (hoje: ${formatBRL(before.available)}).`].join('\n')
     : [`⚠️ <b>Não cabe agora.</b> Compra de ${formatBRL(amount)} ${how}.`, '', `Faltariam <b>${formatBRL(-after.available)}</b>${after.shortfall ? ` — o saldo ficaria em ${formatBRL(after.shortfall.value)} em ${d5(after.shortfall.date)}` : ''}.`].join('\n')
+}
+
+// ---- Assinaturas, fora do padrão, retrospectiva ----
+
+export function subscriptionsMessage(subs: import('./analysis').Subscription[]): string {
+  if (!subs.length) return '🔁 Não encontrei cobranças recorrentes ainda. Elas aparecem depois de 2 meses de lançamentos (do banco ou do Telegram).'
+  const total = subs.reduce((s, x) => s + x.monthly, 0)
+  const lines = [`🔁 <b>Assinaturas e cobranças recorrentes</b>`, `≈ <b>${formatBRL(total)}/mês</b> em ${subs.length} serviço(s)`, '']
+  for (const s of subs.slice(0, 15)) {
+    const flags = [s.increased ? `📈 subiu de ${formatBRL(s.increased.from)}` : '', s.duplicate ? `⚠️ cobrança duplicada em ${formatDateBR(s.duplicate.date).slice(0, 5)}` : ''].filter(Boolean).join(' · ')
+    lines.push(`• <b>${escapeHtml(s.name)}</b> ${formatBRL(s.amount)} · próxima ~${formatDateBR(s.nextDate).slice(0, 5)}${flags ? `\n   ${flags}` : ''}`)
+  }
+  lines.push('', '<i>Cancelou algo? Ignore a próxima cobrança pelo botão quando ela chegar.</i>')
+  return lines.join('\n')
+}
+
+export function subscriptionAlert(s: import('./analysis').Subscription, kind: 'aumento' | 'duplicada'): string {
+  return kind === 'aumento'
+    ? `📈 <b>${escapeHtml(s.name)} ficou mais cara</b>\nDe ${formatBRL(s.increased!.from)} para ${formatBRL(s.increased!.to)} (+${formatBRL(s.increased!.to - s.increased!.from)}/mês).`
+    : `⚠️ <b>Possível cobrança duplicada: ${escapeHtml(s.name)}</b>\n${formatBRL(s.duplicate!.amount)} em ${formatDateBR(s.duplicate!.date)}, poucos dias depois de outra igual. Vale conferir com o banco.`
+}
+
+export function anomalyAlert(a: import('./analysis').Anomaly): string {
+  return `${a.level === 'warn' ? '👀' : '💡'} <b>${escapeHtml(a.title)}</b>\n${escapeHtml(a.text)}`
+}
+
+export function recapMessage(r: import('./analysis').Recap, goals: { title: string; saved_amount: number; target_amount: number }[] = []): string {
+  const stars = '★'.repeat(Math.round(r.score / 2)) + '☆'.repeat(5 - Math.round(r.score / 2))
+  const delta = r.prevSaidas ? ((r.saidas - r.prevSaidas) / r.prevSaidas) * 100 : null
+  const lines = [
+    `📅 <b>Retrospectiva de ${monthLabel(r.key, 'longYear')}</b>`,
+    `Nota do mês: <b>${String(r.score).replace('.', ',')}/10</b> ${stars}`,
+    '',
+    `⬆️ Entrou ${formatBRL(r.entradas)}`,
+    `⬇️ Saiu ${formatBRL(r.saidas)}${delta !== null ? ` (${delta > 0 ? '+' : ''}${Math.round(delta)}% vs mês anterior)` : ''}`,
+    `${r.saldo >= 0 ? '💰' : '🔻'} Sobrou <b>${formatBRL(r.saldo)}</b>${r.savingsRate !== null ? ` (${Math.round(r.savingsRate)}% do que entrou)` : ''}`,
+  ]
+  if (r.topCategories.length) {
+    lines.push('', '🏷️ <b>Onde mais gastou</b>')
+    for (const c of r.topCategories) lines.push(`${getCategory(c.category).emoji} ${escapeHtml(c.category)}: ${formatBRL(c.total)}${c.delta !== null ? ` (${c.delta > 0 ? '↑' : '↓'}${Math.abs(Math.round(c.delta))}%)` : ''}`)
+  }
+  if (r.biggest.length) {
+    lines.push('', '🔝 <b>Maiores gastos</b>')
+    for (const b of r.biggest) lines.push(`${formatDateBR(b.date).slice(0, 5)} ${escapeHtml(b.description)} — ${formatBRL(b.amount)}`)
+  }
+  if (r.budgetsTotal) lines.push('', `🎯 Orçamentos respeitados: ${r.budgetsOk}/${r.budgetsTotal}`)
+  if (goals.length) {
+    lines.push('', '🚩 <b>Metas</b>')
+    for (const g of goals.slice(0, 4)) lines.push(`${escapeHtml(g.title)}: ${Math.round((Number(g.saved_amount) / Math.max(1, Number(g.target_amount))) * 100)}%`)
+  }
+  lines.push('', r.score >= 8 ? '🌟 Mês excelente, continue assim!' : r.score >= 5 ? '👍 Bom mês. Dá para melhorar nas categorias que subiram.' : '💪 Mês puxado. Que tal definir orçamentos para as categorias que mais pesaram?')
+  return lines.join('\n')
 }

@@ -9,6 +9,7 @@ import { currentMonthKey, todayBR } from '../lib/dates'
 import { detectCategory } from '../lib/categories'
 import { play } from '../lib/sounds'
 import { Card, CardHeader, EmptyState, Segmented, cx, inputClass, primaryButton } from './ui'
+import SubscriptionsCard from './SubscriptionsCard'
 
 export default function RecurringPanel({ userId, recurring, txs, onChange, onPaid }: {
   userId: string
@@ -104,6 +105,7 @@ export default function RecurringPanel({ userId, recurring, txs, onChange, onPai
           )) : <EmptyState icon={CalendarX} title="Nenhuma conta fixa" text="Cadastre aluguel, salário e assinaturas para melhorar a projeção." />}
         </ul>
       </Card>
+      <SubscriptionsCard userId={userId} txs={txs} recurring={recurring} onChange={onChange} />
     </div>
   )
 }

@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { addDays, monthKeyOf, todayBR } from '../../../../lib/dates'
 import { budgetStatus, pendingRecurring, recurringDay, type Recurring } from '../../../../lib/finance'
-import { budgetAlertMessage, reminderMessage, weeklyMessage } from '../../../../lib/telegramBot'
+import { anomalyAlert, budgetAlertMessage, recapMessage, reminderMessage, subscriptionAlert, weeklyMessage } from '../../../../lib/telegramBot'
+import { detectAnomalies, detectSubscriptions, monthRecap } from '../../../../lib/analysis'
+import { addMonths } from '../../../../lib/dates'
 import { sendMessage } from '../../../../lib/telegramApi'
 import { adminDb, fetchBudgets, fetchRecurring, fetchTxs, fetchTxsBetween, findPartner, type Db } from '../../../../lib/botData'
 import { notifyImported, syncConnection, type BankConnection } from '../../../../lib/bankSync'
@@ -20,7 +22,7 @@ export async function GET(request: Request) {
 
   const db = adminDb
   const { data: connections } = await db.from('telegram_connections').select('telegram_chat_id, user_id')
-  const report = { users: 0, reminders: 0, weekly: 0, budgetAlerts: 0, bankImported: 0 }
+  const report = { users: 0, reminders: 0, weekly: 0, budgetAlerts: 0, insights: 0, bankImported: 0 }
 
   // Bancos (Pluggy): garante a sincronização diária mesmo se algum webhook falhar
   if (pluggyEnabled()) {
@@ -43,6 +45,7 @@ export async function GET(request: Request) {
       report.reminders += r.reminders
       report.weekly += r.weekly
       report.budgetAlerts += r.budgetAlerts
+      report.insights += r.insights
     } catch (e) {
       console.error('Cron: erro para usuário', c.user_id, e)
     }
@@ -52,7 +55,7 @@ export async function GET(request: Request) {
 }
 
 async function runForUser(db: Db, chatId: number, userId: string) {
-  const out = { reminders: 0, weekly: 0, budgetAlerts: 0 }
+  const out = { reminders: 0, weekly: 0, budgetAlerts: 0, insights: 0 }
   const today = todayBR()
   const tomorrow = addDays(today, 1)
   const key = monthKeyOf(today)
@@ -92,6 +95,31 @@ async function runForUser(db: Db, chatId: number, userId: string) {
       await sendMessage(chatId, budgetAlertMessage(b.category, b.spent, b.limit, level))
       out.budgetAlerts++
     }
+  }
+  // 4. Dia 1: retrospectiva do mês anterior
+  if (today.endsWith('-01')) {
+    const prevKey = addMonths(key, -1)
+    const [hist, goals] = await Promise.all([
+      fetchTxs(db, userId, addMonths(prevKey, -1), prevKey),
+      db.from('goals').select('title, saved_amount, target_amount').eq('user_id', userId).then(({ data }) => data || []),
+    ])
+    await sendMessage(chatId, recapMessage(monthRecap(hist, budgets, prevKey), goals))
+    out.insights++
+  }
+
+  // 5. Assinaturas (aumento / duplicada) e gastos fora do padrão — cada aviso uma única vez
+  const longTxs = await fetchTxsBetween(db, userId, addDays(today, -400), today)
+  const once = async (category: string, period: string) => {
+    const { data } = await db.from('budget_alerts').upsert({ user_id: userId, category, month: period, level: 1 }, { onConflict: 'user_id,category,month,level', ignoreDuplicates: true }).select('level')
+    return !!data?.length
+  }
+  for (const sub of detectSubscriptions(longTxs, recurring, today)) {
+    if (sub.increased && sub.lastDate >= addDays(today, -10) && await once(`assinatura-aumento:${sub.key}`, sub.lastDate.slice(0, 7))) { await sendMessage(chatId, subscriptionAlert(sub, 'aumento')); out.insights++ }
+    if (sub.duplicate && sub.duplicate.date >= addDays(today, -10) && await once(`assinatura-duplicada:${sub.key}`, sub.duplicate.date)) { await sendMessage(chatId, subscriptionAlert(sub, 'duplicada')); out.insights++ }
+  }
+  const week = `${today.slice(0, 4)}-S${String(Math.ceil((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${today.slice(0, 4)}-01-01T00:00:00Z`)) / 604800000)).padStart(2, '0')}`
+  for (const a of detectAnomalies(longTxs, today)) {
+    if (await once(`anomalia:${a.key}`, week)) { await sendMessage(chatId, anomalyAlert(a)); out.insights++ }
   }
   return out
 }

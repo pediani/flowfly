@@ -2,12 +2,13 @@ import { NextResponse } from 'next/server'
 import { CATEGORIES, detectCategory } from '../../../lib/categories'
 import { addDays, addMonths, currentMonthKey, daysInMonth, monthKeyOf, todayBR } from '../../../lib/dates'
 import { pendingRecurring } from '../../../lib/finance'
-import { groqEnabled, readReceipt, transcribe } from '../../../lib/groq'
+import { answerQuestion, groqEnabled, readReceipt, transcribe } from '../../../lib/groq'
+import { detectSubscriptions, monthRecap, qaContext } from '../../../lib/analysis'
 import { extractTags, type ParsedEntry } from '../../../lib/parseEntry'
 import { saveEntries, understandText, type Origin } from '../../../lib/entryPipeline'
 import {
   INVALID_FORMAT, categoryKeyboard, entryKeyboard, escapeHtml, helpMessage, lastEntriesMessage,
-  canBuyMessage, savedMessage, summaryMessage, todayMessage, undoMessage, weeklyMessage,
+  canBuyMessage, recapMessage, savedMessage, subscriptionsMessage, summaryMessage, todayMessage, undoMessage, weeklyMessage,
 } from '../../../lib/telegramBot'
 import { getBankBalances } from '../../../lib/balances'
 import { cardsForPurchase, computeSafeToSpend, purchaseEvents } from '../../../lib/safeToSpend'
@@ -89,6 +90,9 @@ export async function POST(request: Request) {
     if (text.startsWith('/')) {
       const command = text.split(/\s|@/)[0].toLowerCase()
       if (command === '/hoje') await handleToday(db, chatId, userId)
+      else if (command === '/assinaturas') await handleSubscriptions(db, chatId, userId)
+      else if (command === '/mes') await handleRecap(db, chatId, userId, /anterior|passado/i.test(text))
+      else if (command === '/p' || command === '/pergunta') await handleQuestion(db, chatId, userId, text.replace(/^\/\S+\s*/, ''))
       else if (command === '/posso') await handleCanBuy(db, chatId, userId, text)
       else if (command === '/resumo') await handleSummary(db, chatId, userId)
       else if (command === '/semana') await handleWeek(db, chatId, userId)
@@ -98,6 +102,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true })
     }
 
+    if (/\?\s*$/.test(text) && !/\d/.test(text.replace(/\?/g, '').slice(-12))) {
+      await handleQuestion(db, chatId, userId, text)
+      return NextResponse.json({ ok: true })
+    }
     const entries = await understand(db, chatId, userId, text, 'texto')
     if (!entries.length) {
       await sendMessage(chatId, INVALID_FORMAT)
@@ -219,6 +227,31 @@ async function handleCanBuy(db: Db, chatId: number, userId: string, text: string
   const card = m[3] ? null : cardsForPurchase(accounts)[0] ?? null
   const after = computeSafeToSpend(accounts, recurring, txs, { extra: purchaseEvents(amount, inst, card) })!
   await sendMessage(chatId, canBuyMessage(amount, card ? inst : 1, card, before, after))
+}
+
+async function handleSubscriptions(db: Db, chatId: number, userId: string) {
+  const [txs, recurring] = await Promise.all([fetchTxsBetween(db, userId, addDays(todayBR(), -400), todayBR()), fetchRecurring(db, userId)])
+  await sendMessage(chatId, subscriptionsMessage(detectSubscriptions(txs, recurring)))
+}
+
+async function handleRecap(db: Db, chatId: number, userId: string, previous: boolean) {
+  const key = previous ? addMonths(currentMonthKey(), -1) : currentMonthKey()
+  const [txs, budgets, goals] = await Promise.all([
+    fetchTxs(db, userId, addMonths(key, -1), key), fetchBudgets(db, userId),
+    db.from('goals').select('title, saved_amount, target_amount').eq('user_id', userId).then(({ data }) => data || []),
+  ])
+  await sendMessage(chatId, recapMessage(monthRecap(txs, budgets, key), goals))
+}
+
+async function handleQuestion(db: Db, chatId: number, userId: string, question: string) {
+  if (!question.trim()) { await sendMessage(chatId, 'Pergunte algo, por exemplo: <code>/p quanto gastei de ifood em setembro?</code>'); return }
+  if (!groqEnabled()) { await sendMessage(chatId, '🤖 A IA não está configurada.'); return }
+  await sendTyping(chatId)
+  const [txs, budgets, recurring] = await Promise.all([
+    fetchTxsBetween(db, userId, `${addMonths(currentMonthKey(), -5)}-01`, todayBR()), fetchBudgets(db, userId), fetchRecurring(db, userId),
+  ])
+  const answer = await answerQuestion(question, qaContext(txs, budgets, recurring), { userId })
+  await sendMessage(chatId, answer ? `🤖 ${escapeHtml(answer)}` : '🤖 Não consegui responder agora. Tente de novo em instantes.')
 }
 
 async function handleSummary(db: Db, chatId: number, userId: string) {

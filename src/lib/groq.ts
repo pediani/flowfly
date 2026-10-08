@@ -198,3 +198,34 @@ export async function readReceipt(image: Blob, mime: string, ctx: { userId?: str
   })
   return entries
 }
+
+/** Responde perguntas sobre as finanças do usuário usando um resumo compacto dos dados. */
+export async function answerQuestion(question: string, context: string, ctx: { userId?: string } = {}): Promise<string | null> {
+  const system = [
+    'Você é o assistente financeiro do app FlowFly. Responda em português do Brasil, de forma curta (até 6 linhas), direta e simpática.',
+    'Use SOMENTE os dados abaixo. Se a resposta não estiver nos dados, diga isso e sugira o que registrar. Não invente números.',
+    'Formate valores como R$ 1.234,56. Pode usar emojis com moderação. Não use markdown com ** ou #.',
+    '', 'DADOS DO USUÁRIO:', context,
+  ].join('\n')
+  const t0 = Date.now()
+  const res = await fetch(`${API}/chat/completions`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${KEY()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: CHAT_MODEL, temperature: 0.2, reasoning_effort: 'low', max_completion_tokens: 900, messages: [{ role: 'system', content: system }, { role: 'user', content: question.slice(0, 500) }] }),
+  }).catch((e) => e as Error)
+  if (res instanceof Error) { await logAiUsage(adminDb, { user_id: ctx.userId, provider: 'groq', kind: 'chat', model: CHAT_MODEL, purpose: 'pergunta', status: 'erro', latency_ms: Date.now() - t0, error: String(res) }); return null }
+  const limits = rateLimitHeaders(res.headers)
+  const data = await res.json().catch(() => ({}))
+  const u = data.usage || {}
+  const answer: string | null = res.ok ? (data.choices?.[0]?.message?.content || '').trim() || null : null
+  await logAiUsage(adminDb, {
+    user_id: ctx.userId, provider: 'groq', kind: 'chat', model: data.model || CHAT_MODEL, purpose: 'pergunta',
+    status: answer ? 'ok' : res.ok ? 'sem resultado' : 'erro', http_status: res.status, latency_ms: Date.now() - t0,
+    prompt_tokens: u.prompt_tokens ?? null, completion_tokens: u.completion_tokens ?? null, total_tokens: u.total_tokens ?? null,
+    cached_tokens: u.prompt_tokens_details?.cached_tokens ?? null, reasoning_tokens: u.completion_tokens_details?.reasoning_tokens ?? null,
+    queue_time_ms: u.queue_time != null ? Math.round(u.queue_time * 1000) : null, server_time_ms: u.total_time != null ? Math.round(u.total_time * 1000) : null,
+    input_chars: question.length + context.length, request_id: data.x_groq?.id || data.id || null, ratelimit: limits,
+    error: res.ok ? null : JSON.stringify(data).slice(0, 500),
+  })
+  return answer
+}

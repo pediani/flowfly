@@ -7,7 +7,8 @@ import {
 } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import { supabase } from '../lib/supabase'
-import { addMonths, currentMonthKey, monthLabel, todayBR } from '../lib/dates'
+import { addDays, addMonths, currentMonthKey, formatDateBR, monthLabel, todayBR } from '../lib/dates'
+import { detectAnomalies, detectSubscriptions } from '../lib/analysis'
 import { formatBRL } from '../lib/format'
 import { CATEGORY_NAMES, getCategory } from '../lib/categories'
 import {
@@ -58,7 +59,11 @@ export default function Dashboard(p: Props) {
       future: futureProjection(txs, recurring, installments, 6, today),
       cats: categoryBreakdown(txs, monthKey),
       budgets: budgetStatus(txs, budgets, monthKey),
-      insights: buildInsights(txs, recurring, budgets, monthKey, today),
+      insights: [
+        ...(monthKey === currentMonthKey() ? detectAnomalies(txs, today).map((a): Insight => ({ id: a.key, level: a.level, emoji: '👀', title: a.title, text: a.text })) : []),
+        ...(monthKey === currentMonthKey() ? detectSubscriptions(txs, recurring, today).filter((x) => x.duplicate && x.duplicate.date >= addDays(today, -15)).map((x): Insight => ({ id: `dup:${x.key}`, level: 'warn', emoji: '⚠️', title: `Possível cobrança duplicada: ${x.name}`, text: `${formatBRL(x.duplicate!.amount)} em ${formatDateBR(x.duplicate!.date).slice(0, 5)}. Confira com o banco.` })) : []),
+        ...buildInsights(txs, recurring, budgets, monthKey, today),
+      ].slice(0, 6),
       history: monthlyHistory(txs, 13).filter((m) => m.key !== monthKey).slice(0, 6),
       overall: overallBalance(txs),
       debts: pendingDebts(txs),
