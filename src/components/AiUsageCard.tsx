@@ -38,14 +38,31 @@ export default function AiUsageCard() {
   const [rows, setRows] = useState<Row[] | null>(null)
   const [period, setPeriod] = useState<1 | 7 | 30>(30)
   const [loading, setLoading] = useState(false)
+  const [tableError, setTableError] = useState<string | null>(null)
+  const [loadedAt, setLoadedAt] = useState(0)
+  const [live, setLive] = useState<{ chatModel?: string; audioModel?: string; headers?: Record<string, string>; checkedAt?: string; error?: string | null } | null>(null)
+  const [checking, setChecking] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     const since = new Date(Date.now() - 31 * 86400000).toISOString()
-    const { data } = await supabase.from('ai_usage').select('*').gte('created_at', since).order('created_at', { ascending: false }).limit(3000)
+    const { data, error } = await supabase.from('ai_usage').select('*').gte('created_at', since).order('created_at', { ascending: false }).limit(3000)
+    setTableError(error ? error.message : null)
     setRows((data as Row[]) || [])
+    setLoadedAt(Date.now())
     setLoading(false)
   }, [])
+
+  async function checkLimits() {
+    setChecking(true)
+    const { data } = await supabase.auth.getSession()
+    const res = await fetch('/api/ai/limits', { method: 'POST', headers: { Authorization: `Bearer ${data.session?.access_token || ''}` } })
+    const json = await res.json().catch(() => ({ error: 'Falha ao consultar' }))
+    setLive(json)
+    setChecking(false)
+    play(json.error ? 'error' : 'success')
+    load()
+  }
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -70,17 +87,22 @@ export default function AiUsageCard() {
 
     // Uso de hoje vs limites diários, por modelo
     const todayRows = rows.filter((r) => r.provider === 'groq' && dayOf(r.created_at) === today)
-    const models = [...new Set(rows.filter((r) => r.provider === 'groq' && r.model).map((r) => r.model as string))]
+    const inUse = [live?.chatModel || 'openai/gpt-oss-120b', live?.audioModel || 'whisper-large-v3-turbo']
+    const models = [...new Set([...inUse, ...rows.filter((r) => r.provider === 'groq' && r.model).map((r) => r.model as string)])]
     const perModel = models.map((m) => {
       const t = todayRows.filter((r) => r.model === m)
       const last = rows.find((r) => r.model === m && r.ratelimit && Object.keys(r.ratelimit).length)
+      const minuteAgo = loadedAt - 60000
+      const fromLive = live?.chatModel === m && live.headers && Object.keys(live.headers).length ? live : null
       return {
+        requestsLastMinute: rows.filter((r) => r.model === m && Date.parse(r.created_at) >= minuteAgo).length,
+        tokensLastMinute: rows.filter((r) => r.model === m && Date.parse(r.created_at) >= minuteAgo).reduce((s, r) => s + n(r.total_tokens), 0),
         model: m,
         requestsToday: t.length,
         tokensToday: t.reduce((s, r) => s + n(r.total_tokens), 0),
         audioToday: t.reduce((s, r) => s + n(r.audio_seconds), 0),
-        headers: last?.ratelimit || null,
-        headersAt: last?.created_at || null,
+        headers: fromLive?.headers || last?.ratelimit || null,
+        headersAt: fromLive?.checkedAt || last?.created_at || null,
         free: FREE_LIMITS[m],
       }
     })
@@ -108,7 +130,7 @@ export default function AiUsageCard() {
       errors: groq.filter((r) => r.status === 'erro').slice(0, 5),
       perModel, series,
     }
-  }, [rows, period, today])
+  }, [rows, period, today, live, loadedAt])
 
   return (
     <div className={cx(card, 'lg:col-span-2')}>
@@ -129,6 +151,11 @@ export default function AiUsageCard() {
         </div>
       </div>
 
+      {tableError && (
+        <p className="mx-5 mb-3 rounded-lg border border-warn/40 bg-warn/5 p-2.5 text-[11px] text-warn">
+          O registro de uso ainda não está ativo ({tableError}). Rode o SQL da tabela <code>ai_usage</code> no Supabase.
+        </p>
+      )}
       {!stats ? <p className="px-5 pb-5 text-sm text-muted">Carregando…</p> : (
         <div className="space-y-5 px-5 pb-5">
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -144,25 +171,44 @@ export default function AiUsageCard() {
 
           {/* Limites */}
           <div>
-            <p className="mb-2 text-xs font-medium text-muted">Limites de hoje (por modelo)</p>
-            {stats.perModel.length ? (
-              <div className="grid gap-2 md:grid-cols-2">
-                {stats.perModel.map((m) => {
-                  const h = m.headers || {}
-                  const rpdLimit = Number(h['x-ratelimit-limit-requests']) || m.free?.rpd || 0
-                  const rpdLeft = h['x-ratelimit-remaining-requests'] != null ? Number(h['x-ratelimit-remaining-requests']) : null
-                  return (
-                    <div key={m.model} className="rounded-xl border border-line p-3">
-                      <p className="flex items-center gap-1.5 text-sm font-medium">{m.model.includes('whisper') ? <Mic className="h-3.5 w-3.5 text-accent" /> : <Cpu className="h-3.5 w-3.5 text-accent" />}{m.model}</p>
-                      <Meter label="Requisições hoje" used={m.requestsToday} limit={rpdLimit} note={rpdLeft != null ? `restam ${rpdLeft.toLocaleString('pt-BR')} (reinicia em ${h['x-ratelimit-reset-requests'] || '—'})` : undefined} />
-                      {m.free?.tpd ? <Meter label="Tokens hoje" used={m.tokensToday} limit={m.free.tpd} note={h['x-ratelimit-remaining-tokens'] ? `por minuto: restam ${Number(h['x-ratelimit-remaining-tokens']).toLocaleString('pt-BR')} de ${Number(h['x-ratelimit-limit-tokens']).toLocaleString('pt-BR')}` : undefined} /> : null}
-                      {m.free?.asd ? <Meter label="Segundos de áudio hoje" used={Math.round(m.audioToday)} limit={m.free.asd} /> : null}
-                      {m.headersAt && <p className="mt-1.5 text-[10px] text-muted">Headers da última chamada: {formatDateTimeBR(m.headersAt)}</p>}
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-medium text-muted">Limites da conta (plano gratuito da Groq)</p>
+              <button onClick={checkLimits} disabled={checking} className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 text-[11px] font-medium hover:bg-surface-2 disabled:opacity-50">
+                <RefreshCw className={cx('h-3 w-3', checking && 'animate-spin')} /> Consultar limites agora
+              </button>
+            </div>
+            {live?.error && <p className="mb-2 text-[11px] text-expense">Groq: {live.error}</p>}
+            <div className="grid gap-2 md:grid-cols-2">
+              {stats.perModel.map((m) => {
+                const h = m.headers || {}
+                const f = m.free
+                const rpd = Number(h['x-ratelimit-limit-requests']) || f?.rpd || 0
+                const rpdLeft = h['x-ratelimit-remaining-requests'] != null ? Number(h['x-ratelimit-remaining-requests']) : null
+                const tpm = Number(h['x-ratelimit-limit-tokens']) || f?.tpm || 0
+                const tpmLeft = h['x-ratelimit-remaining-tokens'] != null ? Number(h['x-ratelimit-remaining-tokens']) : null
+                const isAudio = m.model.includes('whisper')
+                return (
+                  <div key={m.model} className="rounded-xl border border-line p-3">
+                    <p className="flex items-center gap-1.5 text-sm font-medium">{isAudio ? <Mic className="h-3.5 w-3.5 text-accent" /> : <Cpu className="h-3.5 w-3.5 text-accent" />}{m.model}</p>
+                    <div className="mt-2 grid grid-cols-3 gap-1.5 text-center text-[10px]">
+                      <Limit label="por minuto" value={f ? `${f.rpm} req` : '—'} />
+                      <Limit label="por dia" value={rpd ? `${rpd.toLocaleString('pt-BR')} req` : '—'} />
+                      <Limit label={isAudio ? 'áudio/dia' : 'tokens/dia'} value={isAudio ? (f?.asd ? `${Math.round(f.asd / 60)} min` : '—') : (f?.tpd ? `${(f.tpd / 1000).toLocaleString('pt-BR')} mil` : '—')} />
                     </div>
-                  )
-                })}
-              </div>
-            ) : <p className="text-xs text-muted">Nenhuma chamada à Groq ainda.</p>}
+                    <Meter label="Requisições hoje" used={rpdLeft != null && rpd ? rpd - rpdLeft : m.requestsToday} limit={rpd}
+                      note={rpdLeft != null ? `restam ${rpdLeft.toLocaleString('pt-BR')} · reinicia em ${h['x-ratelimit-reset-requests'] || '—'}` : 'contando pelas chamadas registradas no app'} />
+                    <Meter label="Requisições no último minuto" used={m.requestsLastMinute} limit={f?.rpm || 0} />
+                    {!isAudio && <Meter label="Tokens por minuto" used={tpmLeft != null && tpm ? tpm - tpmLeft : m.tokensLastMinute} limit={tpm}
+                      note={tpmLeft != null ? `restam ${tpmLeft.toLocaleString('pt-BR')} · reinicia em ${h['x-ratelimit-reset-tokens'] || '—'}` : undefined} />}
+                    {!isAudio && f?.tpd ? <Meter label="Tokens hoje" used={m.tokensToday} limit={f.tpd} /> : null}
+                    {isAudio && f?.asd ? <Meter label="Segundos de áudio hoje" used={Math.round(m.audioToday)} limit={f.asd} note={f.ash ? `limite por hora: ${Math.round(f.ash / 60)} min` : undefined} /> : null}
+                    <p className="mt-1.5 text-[10px] text-muted">
+                      {m.headersAt ? `Valores da Groq em ${formatDateTimeBR(m.headersAt)}` : 'Limites de referência do plano gratuito; toque em “Consultar limites agora” para ver os da sua conta.'}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
           </div>
 
           {/* Por dia */}
@@ -233,6 +279,15 @@ function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: 
       <p className="text-[11px] text-muted">{label}</p>
       <p className={cx('mt-1 truncate tabular text-sm font-semibold', tone)}>{value}</p>
       {sub && <p className="mt-0.5 truncate text-[10px] text-muted" title={sub}>{sub}</p>}
+    </div>
+  )
+}
+
+function Limit({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-surface-2 px-1.5 py-1.5">
+      <p className="tabular text-[11px] font-semibold text-ink">{value}</p>
+      <p className="text-muted">{label}</p>
     </div>
   )
 }
