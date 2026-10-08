@@ -59,7 +59,7 @@ export async function interpretMany(text: string, ctx: { userId?: string; purpos
     `Hoje é ${today}. Responda SOMENTE um JSON no formato {"items": [ ... ]}, onde cada item tem:`,
     '{"type": "saida"|"entrada", "description": string curta (2-4 palavras, sem valor nem data), "amount": number em reais,',
     ` "category": uma de [${CATEGORY_NAMES.join(', ')}], "date": "YYYY-MM-DD", "installments": inteiro (1 se à vista)}`,
-    'Números por extenso viram dígitos ("trinta e cinco e noventa" = 35.90). "recebi", "ganhei", "salário" = entrada; "gastei", "paguei", "comprei" = saída.',
+    'Números por extenso viram dígitos ("trinta e cinco e noventa" = 35.90; "12 reais e 50 centavos" = 12.50; "12 e 50" = 12.50). "recebi", "ganhei", "salário" = entrada; "gastei", "paguei", "comprei" = saída.',
     'Se um item não disser o tipo ou a data, use os do item anterior. Se não houver lançamento, responda {"items": []}.',
   ].join('\n')
 

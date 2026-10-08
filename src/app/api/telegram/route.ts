@@ -4,7 +4,7 @@ import { addDays, addMonths, currentMonthKey, monthKeyOf, todayBR } from '../../
 import { pendingRecurring } from '../../../lib/finance'
 import { groqEnabled, interpretMany, transcribe } from '../../../lib/groq'
 import { logAiUsage } from '../../../lib/aiUsage'
-import { parseEntry, parseMany, parseNatural, type ParsedEntry } from '../../../lib/parseEntry'
+import { normalizeSpokenAmounts, parseEntry, parseMany, parseNatural, type ParsedEntry } from '../../../lib/parseEntry'
 import {
   INVALID_FORMAT, categoryKeyboard, entryKeyboard, escapeHtml, helpMessage, lastEntriesMessage,
   multiSummaryMessage, savedMessage, summaryMessage, undoMessage, weeklyMessage,
@@ -117,6 +117,7 @@ async function renderEntry(db: Db, userId: string, entry: ParsedEntry, createdAt
 
 /** Texto → lançamentos: primeiro sem IA (rápido e grátis); se não der, Groq. Tudo fica registrado em ai_usage. */
 async function understand(db: Db, chatId: number, userId: string, text: string, origin: 'texto' | 'áudio'): Promise<ParsedEntry[]> {
+  text = normalizeSpokenAmounts(text)
   const many = parseMany(text)
   const single = many.length ? null : parseEntry(text) ?? parseNatural(text)
   const local = many.length ? many : single ? [single] : []

@@ -270,3 +270,30 @@ export function parseMany(text: string, today = todayBR()): ParsedEntry[] {
     return e
   })
 }
+
+// ---- Centavos falados ----
+
+const DESC_STOP = /^(gastei|paguei|comprei|gasto|foi|deu|custou|recebi|ganhei|entrou|caiu|vendi|reais|real|r\$|conto|contos|pila|no|na|nos|nas|de|do|da|dos|das|em|com|um|uma|o|a|os|as|pro|pra|para|por|eu|hoje|ontem|anteontem|mais|tamb[eé]m|s|e|saida|saída|entrada)$/i
+
+const hasDescription = (segment: string) =>
+  segment.split(/[\s,;]+/).some((w) => w && !/^\d/.test(w) && !DESC_STOP.test(w.normalize('NFD').replace(/[\u0300-\u036f]/g, '')))
+
+/**
+ * Junta reais e centavos ditos por extenso antes de qualquer outra leitura:
+ *   "12 reais e 50 centavos" → "12,50"   ·   "12 e 50" → "12,50"   ·   "20 reais e 5 centavos" → "20,05"
+ * Mas "mercado 20 e 30 no uber" continua sendo dois lançamentos (há descrição antes e depois).
+ */
+export function normalizeSpokenAmounts(text: string): string {
+  let out = text.replace(/\s+/g, ' ')
+  // 1) "N reais e M centavos" / "N e M centavos" (centavos explícito: sempre junta)
+  out = out.replace(/(\d+)(?:\s*(?:reais|real))?\s+e\s+(\d{1,2})\s+centavos?/gi, (_m, r: string, c: string) => `${r},${c.padStart(2, '0')}`)
+  // 2) "N reais e MM" / "N e MM" (dois dígitos, sem "centavos")
+  out = out.replace(/(\d+)(\s*(?:reais|real))?\s+e\s+(\d{2})(?!\d|[.,]\d)/gi, (m, r: string, _reais: string, c: string, offset: number, all: string) => {
+    const before = all.slice(0, offset).split(/,\s|;|\n|\se\s/).pop() || ''
+    const after = all.slice(offset + m.length).split(/,\s|;|\n|\se\s/)[0] || ''
+    // descrição dos dois lados = são dois lançamentos ("mercado 20 e 30 no uber")
+    if (hasDescription(before) && hasDescription(after)) return m
+    return `${r},${c}`
+  })
+  return out
+}
