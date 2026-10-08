@@ -35,7 +35,7 @@ export default function NetWorthCard({ refreshKey }: { refreshKey: number }) {
 
   return (
     <Card delay={220}>
-      <CardHeader title="Patrimônio" icon={<LineIcon className="h-4 w-4 text-muted" />} subtitle="Contas + investimentos − dívidas no cartão (inclui parcelas futuras)" />
+      <CardHeader title="Patrimônio" icon={<LineIcon className="h-4 w-4 text-muted" />} subtitle="Contas + investimentos − faturas a pagar. Parcelas futuras ficam à parte." />
       <div className="grid gap-4 px-5 pb-5 md:grid-cols-[1fr_1.3fr]">
         <div>
           <Money value={c.net} className={cx('block text-3xl font-semibold tracking-tight', c.net < 0 && 'text-expense')} />
@@ -43,8 +43,14 @@ export default function NetWorthCard({ refreshKey }: { refreshKey: number }) {
           <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
             <Box label="Contas" value={c.cash} />
             <Box label="Investimentos" value={c.investments} tone="text-income" />
-            <Box label="Dívidas" value={-c.debts} tone="text-expense" />
+            <Box label="Faturas a pagar" value={-c.debts} tone="text-expense" />
           </div>
+          {c.futureInstallments > 0 && (
+            <p className="mt-2 text-[11px] text-muted">
+              + <b className="text-ink">{formatBRL(c.futureInstallments)}</b> em parcelas que caem nas próximas faturas (não descontado acima).
+              {' '}Considerando tudo: <b className="text-ink">{formatBRL(c.net - c.futureInstallments)}</b>.
+            </p>
+          )}
         </div>
         <div className="h-36">
           {hist.length >= 2 ? (
@@ -67,7 +73,10 @@ export default function NetWorthCard({ refreshKey }: { refreshKey: number }) {
           {[...c.details.investments.map((i) => ({ ...i, kind: 'inv' })), ...c.details.accounts.map((a) => ({ ...a, kind: a.type }))].map((x, i) => (
             <li key={i} className="flex items-center justify-between gap-3 px-3 py-2">
               <span className="flex min-w-0 items-center gap-2 truncate"><Landmark className="h-3.5 w-3.5 shrink-0 text-muted" />{x.institution} · {x.name}{x.kind === 'inv' && x.type ? <span className="text-xs text-muted"> · {x.type}</span> : null}</span>
-              <span className={cx('shrink-0 tabular font-medium', x.value < 0 ? 'text-expense' : x.kind === 'inv' ? 'text-income' : '')}>{formatBRL(x.value)}</span>
+              <span className="shrink-0 text-right">
+                <span className={cx('block tabular font-medium', x.value < 0 ? 'text-expense' : x.kind === 'inv' ? 'text-income' : '')}>{formatBRL(x.value)}</span>
+                {'future' in x && Number(x.future) > 0 && <span className="block text-[10px] text-muted">+ {formatBRL(Number(x.future))} em parcelas futuras</span>}
+              </span>
             </li>
           ))}
           {!c.details.investments.length && <li className="px-3 py-2 text-xs text-muted">Nenhum investimento encontrado nas conexões do Meu Pluggy.</li>}
