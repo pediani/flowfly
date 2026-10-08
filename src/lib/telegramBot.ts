@@ -255,6 +255,7 @@ export function todayMessage(safe: import('./safeToSpend').SafeToSpend, best: im
     ? [`💸 <b>Você pode gastar ${formatBRL(safe.available)}</b>`, `até ${d5(safe.until)}${safe.nextIncome ? ` (véspera de ${escapeHtml(safe.nextIncome.label)})` : ''} · ~<b>${formatBRL(safe.perDay)}/dia</b>`]
     : [`🚨 <b>Faltam ${formatBRL(-safe.available)}</b> para cobrir tudo até ${d5(safe.until)}`]
   if (safe.shortfall) lines.push(`⚠️ Em ${d5(safe.shortfall.date)} o saldo fica em ${formatBRL(safe.shortfall.value)}.`)
+  else if (safe.safeNow < safe.available) { const n = safe.flow.events.find((e) => e.amount > 0); lines.push(`⏳ Agora, use no máximo <b>${formatBRL(Math.max(0, safe.safeNow))}</b>; o resto depende do que vai entrar${n ? ` (${escapeHtml(n.label)} em ${d5(n.date)})` : ''}.`) }
   lines.push(
     '',
     `🏦 No banco: ${formatBRL(safe.bankBalance)}`,
@@ -276,9 +277,9 @@ export function todayMessage(safe: import('./safeToSpend').SafeToSpend, best: im
 export function canBuyMessage(amount: number, installments: number, card: import('./safeToSpend').CardPick | null, before: import('./safeToSpend').SafeToSpend, after: import('./safeToSpend').SafeToSpend): string {
   const d5 = (iso: string) => formatDateBR(iso).slice(0, 5)
   const how = card ? `${installments > 1 ? `${installments}x de ${formatBRL(amount / installments)}` : 'à vista'} no ${escapeHtml(card.institution)} ·${card.last4} (1ª fatura ${d5(card.due)})` : 'à vista (Pix/débito)'
-  return after.available >= 0
+  return after.available >= 0 && after.safeNow >= 0
     ? [`✅ <b>Cabe!</b> Compra de ${formatBRL(amount)} ${how}.`, '', `Depois dela, você ainda pode gastar <b>${formatBRL(after.available)}</b> até ${d5(after.until)} (hoje: ${formatBRL(before.available)}).`].join('\n')
-    : [`⚠️ <b>Não cabe agora.</b> Compra de ${formatBRL(amount)} ${how}.`, '', `Faltariam <b>${formatBRL(-after.available)}</b>${after.shortfall ? ` — o saldo ficaria em ${formatBRL(after.shortfall.value)} em ${d5(after.shortfall.date)}` : ''}.`].join('\n')
+    : [`⚠️ <b>Não cabe agora.</b> Compra de ${formatBRL(amount)} ${how}.`, '', `Faltariam <b>${formatBRL(-Math.min(after.available, after.safeNow))}</b>${after.shortfall ? ` — o saldo ficaria em ${formatBRL(after.shortfall.value)} em ${d5(after.shortfall.date)}` : ''}.`].join('\n')
 }
 
 // ---- Assinaturas, fora do padrão, retrospectiva ----

@@ -1,11 +1,15 @@
-// "Quanto posso gastar": o menor saldo previsto até o próximo recebimento depois das faturas do começo do mês.
+// "Quanto posso gastar": quanto sobra até a véspera do próximo recebimento (banco + lançado + entradas − saídas − reserva).
+// `safeNow` é o limite para gastar já, sem ficar no vermelho antes de o dinheiro entrar.
 import { addDays, addMonths, daysInMonth, monthKeyOf, todayBR } from './dates'
 import { buildCashFlow, type CashEvent, type CashFlow } from './cashflow'
 import type { Recurring, Tx } from './finance'
 import type { BankBalance } from './pluggy'
 
 export type SafeToSpend = {
-  available: number          // quanto dá para gastar sem ficar no vermelho até `until` (já descontada a reserva)
+  available: number          // sobra prevista em `until`: banco + lançado + entradas − saídas − reserva
+  safeNow: number            // menor saldo do período − reserva: o máximo para gastar hoje sem ficar negativo em nenhum dia
+  low: { date: string; value: number }
+  pending: Tx[]              // lançamentos do Telegram/painel ainda fora do saldo do banco
   perDay: number
   days: number
   until: string              // véspera do próximo recebimento do mês seguinte
@@ -59,12 +63,13 @@ export function computeSafeToSpend(
 
   const flow = buildCashFlow(accounts, recurring, txs, until, today, { startOffset: unsynced, extra: opts.extra })
   const lowest = Math.min(flow.start, ...flow.series.map((p) => p.saldo))
-  const available = Math.round((lowest - reserve) * 100) / 100
+  const safeNow = Math.round((lowest - reserve) * 100) / 100
+  const available = Math.round((flow.end - reserve) * 100) / 100
   const days = Math.max(1, Math.round((Date.parse(`${until}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86400000) + 1)
   const neg = flow.series.find((p) => p.saldo < 0)
 
   return {
-    available, perDay: Math.max(0, Math.round((available / days) * 100) / 100), days, until, nextIncome,
+    available, safeNow, low: flow.min, pending, perDay: Math.max(0, Math.round((available / days) * 100) / 100), days, until, nextIncome,
     bankBalance: Math.round(bankBalance * 100) / 100, unsynced, unsyncedCount: pending.length, bankDate,
     incoming: flow.events.filter((e) => e.amount > 0).reduce((s, e) => s + e.amount, 0),
     outgoing: flow.events.filter((e) => e.amount < 0).reduce((s, e) => s + e.amount, 0),
@@ -73,7 +78,7 @@ export function computeSafeToSpend(
   }
 }
 
-// ---- Cartões: melhor para comprar hoje ----
+// ---- Cartões: melhor para comprar em cada data ----
 
 export type CardPick = { institution: string; name: string; last4: string; closes: string; due: string }
 
@@ -84,19 +89,37 @@ function addMonthsDate(iso: string, n: number): string {
   return new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), Math.min(d, last))).toISOString().slice(0, 10)
 }
 
-/** Para uma compra hoje: em que fatura cai e quando vence, em cada cartão. O melhor é o de vencimento mais distante. */
-export function cardsForPurchase(accounts: BankBalance[], today = todayBR()): CardPick[] {
+/** Para uma compra na data `day`: em que fatura cai e quando vence, em cada cartão. O melhor é o de vencimento mais distante. */
+export function cardsForPurchase(accounts: BankBalance[], day = todayBR()): CardPick[] {
   return accounts
     .filter((a) => a.type === 'Cartão' && a.openCloses && a.openDue)
     .map((a) => {
-      const closes = a.openCloses!.slice(0, 10)
-      const due = a.openDue!.slice(0, 10)
+      const closes0 = a.openCloses!.slice(0, 10)
+      const due0 = a.openDue!.slice(0, 10)
       // compra depois do fechamento cai na fatura seguinte
-      return today <= closes
-        ? { institution: a.institution, name: a.name, last4: a.last4, closes, due }
-        : { institution: a.institution, name: a.name, last4: a.last4, closes: addMonthsDate(closes, 1), due: addMonthsDate(due, 1) }
+      let k = 0
+      while (day > addMonthsDate(closes0, k) && k < 24) k++
+      return { institution: a.institution, name: a.name, last4: a.last4, closes: addMonthsDate(closes0, k), due: addMonthsDate(due0, k) }
     })
     .sort((a, b) => b.due.localeCompare(a.due))
+}
+
+export const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000)
+
+export type BestCardRange = { from: string; to: string; card: CardPick; days: number }
+
+/** Melhor cartão dia a dia nos próximos `span` dias, agrupado em períodos. `days` = prazo até pagar (comprando no 1º dia do período). */
+export function bestCardTimeline(accounts: BankBalance[], today = todayBR(), span = 45): BestCardRange[] {
+  const out: BestCardRange[] = []
+  for (let i = 0; i < span; i++) {
+    const day = new Date(Date.parse(`${today}T00:00:00Z`) + i * 86400000).toISOString().slice(0, 10)
+    const best = cardsForPurchase(accounts, day)[0]
+    if (!best) return out
+    const last = out[out.length - 1]
+    if (last && last.card.institution === best.institution && last.card.last4 === best.last4 && last.card.due === best.due) last.to = day
+    else out.push({ from: day, to: day, card: best, days: daysBetween(day, best.due) })
+  }
+  return out
 }
 
 /** Simulação de compra: à vista (sai hoje) ou no cartão (parcelas nos próximos vencimentos). */

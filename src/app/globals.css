@@ -61,6 +61,17 @@
   --animate-sheet-up: sheet-up 0.32s cubic-bezier(0.2, 0.9, 0.2, 1) both;
   --animate-fade-in: fade-in 0.2s ease-out both;
   --animate-pop: pop 0.35s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  --animate-card-float: card-float 3s ease-in-out infinite;
+  --animate-shine: shine 2.8s ease-in-out infinite;
+}
+
+@keyframes card-float {
+  0%, 100% { transform: translateY(0) rotate(-6deg); }
+  50% { transform: translateY(-2px) rotate(4deg); }
+}
+@keyframes shine {
+  0%, 60% { transform: translateX(-120%) skewX(-20deg); }
+  100% { transform: translateX(220%) skewX(-20deg); }
 }
 
 @keyframes fade-up {
