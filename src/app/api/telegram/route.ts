@@ -1,14 +1,16 @@
 import { NextResponse } from 'next/server'
 import { CATEGORIES, detectCategory } from '../../../lib/categories'
-import { addDays, addMonths, currentMonthKey, monthKeyOf, todayBR } from '../../../lib/dates'
+import { addDays, addMonths, currentMonthKey, daysInMonth, monthKeyOf, todayBR } from '../../../lib/dates'
 import { pendingRecurring } from '../../../lib/finance'
 import { groqEnabled, interpretMany, transcribe } from '../../../lib/groq'
 import { logAiUsage } from '../../../lib/aiUsage'
 import { normalizeSpokenAmounts, parseEntry, parseMany, parseNatural, type ParsedEntry } from '../../../lib/parseEntry'
 import {
   INVALID_FORMAT, categoryKeyboard, entryKeyboard, escapeHtml, helpMessage, lastEntriesMessage,
-  multiSummaryMessage, savedMessage, summaryMessage, undoMessage, weeklyMessage,
+  canBuyMessage, multiSummaryMessage, savedMessage, summaryMessage, todayMessage, undoMessage, weeklyMessage,
 } from '../../../lib/telegramBot'
+import { getBankBalances } from '../../../lib/balances'
+import { cardsForPurchase, computeSafeToSpend, purchaseEvents } from '../../../lib/safeToSpend'
 import { answerCallback, downloadFile, editKeyboard, editMessage, sendMessage, sendTyping } from '../../../lib/telegramApi'
 import {
   TX_COLS, adminDb, entryFromRows, fetchBudgets, fetchRecurring, fetchTxs, fetchTxsBetween, findPartner, insertEntry, rowsOf,
@@ -79,7 +81,9 @@ export async function POST(request: Request) {
 
     if (text.startsWith('/')) {
       const command = text.split(/\s|@/)[0].toLowerCase()
-      if (command === '/resumo') await handleSummary(db, chatId, userId)
+      if (command === '/hoje') await handleToday(db, chatId, userId)
+      else if (command === '/posso') await handleCanBuy(db, chatId, userId, text)
+      else if (command === '/resumo') await handleSummary(db, chatId, userId)
       else if (command === '/semana') await handleWeek(db, chatId, userId)
       else if (command === '/ultimos') await handleLast(db, chatId, userId)
       else if (command === '/desfazer') await handleUndo(db, chatId, userId)
@@ -200,6 +204,39 @@ async function handleVoice(db: Db, chatId: number, userId: string, file: { file_
   }
   await sendMessage(chatId, `🎙️ <i>“${escapeHtml(heard)}”</i>`)
   await registerEntries(db, chatId, userId, entries)
+}
+
+async function safeContext(db: Db, userId: string) {
+  const key = currentMonthKey()
+  const [{ accounts }, recurring, txs] = await Promise.all([
+    getBankBalances(db, userId),
+    fetchRecurring(db, userId),
+    fetchTxsBetween(db, userId, addDays(todayBR(), -10), `${addMonths(key, 1)}-${daysInMonth(addMonths(key, 1))}`),
+  ])
+  return { accounts, recurring, txs }
+}
+
+async function handleToday(db: Db, chatId: number, userId: string) {
+  await sendTyping(chatId)
+  const { accounts, recurring, txs } = await safeContext(db, userId)
+  const safe = computeSafeToSpend(accounts, recurring, txs)
+  if (!safe) { await sendMessage(chatId, '🏦 Conecte um banco no painel (aba Conexões) para eu calcular quanto você pode gastar.'); return }
+  await sendMessage(chatId, todayMessage(safe, cardsForPurchase(accounts)[0] ?? null))
+}
+
+async function handleCanBuy(db: Db, chatId: number, userId: string, text: string) {
+  // /posso 2400 10x · /posso 89,90 · /posso 300 pix
+  const m = text.match(/\/posso(?:@\w+)?\s+(?:R\$\s*)?([\d.]+(?:,\d{1,2})?)(?:\s+(?:em\s+)?(\d{1,2})\s?x)?(\s+(?:pix|debito|débito|dinheiro))?/i)
+  if (!m) { await sendMessage(chatId, 'Use assim: <code>/posso 2400 10x</code> (no melhor cartão) ou <code>/posso 300 pix</code>.'); return }
+  const amount = parseFloat(m[1].replace(/\./g, '').replace(',', '.'))
+  const inst = m[2] ? Math.max(1, Math.min(24, Number(m[2]))) : 1
+  await sendTyping(chatId)
+  const { accounts, recurring, txs } = await safeContext(db, userId)
+  const before = computeSafeToSpend(accounts, recurring, txs)
+  if (!before) { await sendMessage(chatId, '🏦 Conecte um banco no painel para eu simular a compra.'); return }
+  const card = m[3] ? null : cardsForPurchase(accounts)[0] ?? null
+  const after = computeSafeToSpend(accounts, recurring, txs, { extra: purchaseEvents(amount, inst, card) })!
+  await sendMessage(chatId, canBuyMessage(amount, card ? inst : 1, card, before, after))
 }
 
 async function handleSummary(db: Db, chatId: number, userId: string) {

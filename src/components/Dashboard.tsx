@@ -79,7 +79,7 @@ export default function Dashboard(p: Props) {
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-sm text-muted">Resultado de {monthLabel(monthKey)} <span className="text-xs">(entradas − saídas)</span></p>
-            <Money value={s.saldo} className={cx('mt-1 block text-4xl font-semibold tracking-tight md:text-5xl', s.saldo < 0 && 'text-expense')} />
+            <Money value={s.saldo} className={cx('mt-1 block text-2xl font-semibold tracking-tight md:text-3xl', s.saldo < 0 && 'text-expense')} />
           </div>
           <div className="flex flex-wrap gap-2 text-xs">
             <Pill icon={Wallet}>Acumulado no app <b className="tabular">{formatBRL(data.overall)}</b></Pill>

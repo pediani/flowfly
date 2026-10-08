@@ -3,7 +3,7 @@ import { addDays, addMonths, daysInMonth, formatDateBR, monthKeyOf, todayBR } fr
 import { pendingRecurring, type Recurring, type Tx } from './finance'
 import type { BankBalance } from './pluggy'
 
-export type CashEvent = { date: string; label: string; amount: number; kind: 'fatura' | 'fixa' | 'agendado' }
+export type CashEvent = { date: string; label: string; amount: number; kind: 'fatura' | 'fixa' | 'agendado' | 'simulado' }
 export type CashFlow = {
   start: number
   end: number
@@ -25,9 +25,12 @@ export function horizonDate(kind: 'mes' | '30d' | 'proximo', today = todayBR()):
   return `${next}-${daysInMonth(next)}`
 }
 
-export function buildCashFlow(accounts: BankBalance[], recurring: Recurring[], txs: Tx[], until: string, today = todayBR()): CashFlow {
-  const start = accounts.filter((a) => a.type === 'Conta').reduce((s, a) => s + Number(a.balance), 0)
-  const events: CashEvent[] = []
+export function buildCashFlow(
+  accounts: BankBalance[], recurring: Recurring[], txs: Tx[], until: string, today = todayBR(),
+  opts: { startOffset?: number; extra?: CashEvent[] } = {},
+): CashFlow {
+  const start = accounts.filter((a) => a.type === 'Conta').reduce((s, a) => s + Number(a.balance), 0) + (opts.startOffset || 0)
+  const events: CashEvent[] = [...(opts.extra || []).filter((e) => e.date >= today && e.date <= until)]
 
   // Faturas dos cartões, no vencimento
   for (const c of accounts.filter((a) => a.type === 'Cartão')) {

@@ -6,9 +6,10 @@ import { normalize } from '../lib/categories'
 import { dayLabelBR, formatDateBR, formatTimeBR, monthLabel } from '../lib/dates'
 import { play } from '../lib/sounds'
 import { formatBRL } from '../lib/format'
-import type { Tx } from '../lib/finance'
+import type { Recurring, Tx } from '../lib/finance'
+import CalendarView from './CalendarView'
 import { TransactionItem } from './TransactionItem'
-import { Card, Chip, EmptyState, inputClass } from './ui'
+import { Card, Chip, EmptyState, cx, inputClass } from './ui'
 
 type Filter = 'all' | 'entrada' | 'saida' | 'a_pagar' | 'telegram' | 'bank'
 
@@ -34,13 +35,16 @@ function exportCsv(rows: Tx[], name: string) {
   URL.revokeObjectURL(url)
 }
 
-export default function TransactionsList({ txs, monthKey, onDelete, onPay, onEdit }: {
+export default function TransactionsList({ txs, monthKey, onDelete, onPay, onEdit, recurring = [], refreshKey = 0 }: {
   txs: Tx[]
   monthKey: string
   onDelete: (t: Tx) => void
   onPay: (t: Tx) => void
   onEdit: (t: Tx) => void
+  recurring?: Recurring[]
+  refreshKey?: number
 }) {
+  const [view, setView] = useState<'lista' | 'calendario'>('lista')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [allMonths, setAllMonths] = useState(false)
@@ -61,8 +65,28 @@ export default function TransactionsList({ txs, monthKey, onDelete, onPay, onEdi
 
   const count = groups.reduce((a, g) => a + g.items.length, 0)
 
+  const switcher = (
+    <div className="inline-flex rounded-xl bg-surface-2 p-1">
+      {(['lista', 'calendario'] as const).map((v) => (
+        <button key={v} onClick={() => { play('toggle'); setView(v) }} className={cx('h-8 rounded-lg px-3 text-xs font-medium', view === v ? 'bg-surface text-ink shadow-[var(--shadow)]' : 'text-muted')}>
+          {v === 'lista' ? 'Lista' : 'Calendário'}
+        </button>
+      ))}
+    </div>
+  )
+
+  if (view === 'calendario') {
+    return (
+      <div className="space-y-4">
+        {switcher}
+        <CalendarView txs={txs} recurring={recurring} monthKey={monthKey} refreshKey={refreshKey} />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
+      {switcher}
       <Card className="p-4 space-y-3">
         <div className="relative">
           <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />

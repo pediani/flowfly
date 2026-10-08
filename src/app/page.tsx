@@ -157,7 +157,7 @@ export default function Home() {
             settlementKey={settlementKey} onSettled={loadTransactions}
           />
         )}
-        {tab === 'lancamentos' && <TransactionsList txs={txs} monthKey={monthKey} onDelete={handleDelete} onPay={handlePay} onEdit={handleEdit} />}
+        {tab === 'lancamentos' && <TransactionsList txs={txs} monthKey={monthKey} onDelete={handleDelete} onPay={handlePay} onEdit={handleEdit} recurring={recurring} refreshKey={settlementKey} />}
         {tab === 'fixas' && <RecurringPanel userId={userId} recurring={recurring} txs={txs} onChange={loadRecurring} onPaid={loadTransactions} />}
         {tab === 'conexoes' && <ConnectionsPanel onPartnersChange={loadPartners} onBankSynced={loadTransactions} />}
       </AppShell>

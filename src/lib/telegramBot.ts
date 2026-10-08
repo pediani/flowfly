@@ -157,6 +157,8 @@ export function helpMessage(voice = false): string {
     'Depois de registrar, use os botões para trocar a categoria, mudar para ontem, dividir ou desfazer.',
     '',
     '<b>Comandos</b>',
+    '/hoje — quanto você pode gastar até o próximo recebimento',
+    '/posso 2400 10x — simula uma compra',
     '/resumo — balanço do mês e projeção',
     '/semana — resumo dos últimos 7 dias',
     '/ultimos — últimos lançamentos',
@@ -238,3 +240,37 @@ export function budgetAlertMessage(category: string, spent: number, limit: numbe
 
 export const INVALID_FORMAT =
   '🤔 Não entendi. Use <code>s descrição valor</code> ou <code>e descrição valor</code>.\nEx.: <code>s uber 50,40</code> · <code>e salário 1000</code> · <code>mercado 80 ontem</code>\n\nEnvie /ajuda para ver tudo.'
+
+// ---- Quanto posso gastar ----
+
+export function todayMessage(safe: import('./safeToSpend').SafeToSpend, best: import('./safeToSpend').CardPick | null): string {
+  const d5 = (iso: string) => formatDateBR(iso).slice(0, 5)
+  const lines = safe.available >= 0
+    ? [`💸 <b>Você pode gastar ${formatBRL(safe.available)}</b>`, `até ${d5(safe.until)}${safe.nextIncome ? ` (véspera de ${escapeHtml(safe.nextIncome.label)})` : ''} · ~<b>${formatBRL(safe.perDay)}/dia</b>`]
+    : [`🚨 <b>Faltam ${formatBRL(-safe.available)}</b> para cobrir tudo até ${d5(safe.until)}`]
+  if (safe.shortfall) lines.push(`⚠️ Em ${d5(safe.shortfall.date)} o saldo fica em ${formatBRL(safe.shortfall.value)}.`)
+  lines.push(
+    '',
+    `🏦 No banco: ${formatBRL(safe.bankBalance)}`,
+    ...(safe.unsyncedCount ? [`📱 Lançado depois: ${formatBRL(safe.unsynced)} (${safe.unsyncedCount})`] : []),
+    `⬆️ Entra até ${d5(safe.until)}: ${formatBRL(safe.incoming)}`,
+    `⬇️ Sai até ${d5(safe.until)}: ${formatBRL(-safe.outgoing)}`,
+    `📉 Menor saldo: ${formatBRL(safe.flow.min.value)} em ${d5(safe.flow.min.date)}`,
+  )
+  const next = safe.flow.events.slice(0, 5)
+  if (next.length) {
+    lines.push('', '<b>Próximos</b>')
+    for (const e of next) lines.push(`${d5(e.date)} ${e.kind === 'fatura' ? '💳' : e.amount > 0 ? '⬆️' : '⬇️'} ${escapeHtml(e.label)} ${e.amount > 0 ? '+' : '−'}${formatBRL(Math.abs(e.amount))}`)
+  }
+  if (best) lines.push('', `💳 Comprando no cartão hoje, use o <b>${escapeHtml(best.institution)} ·${best.last4}</b> (vence ${d5(best.due)}).`)
+  lines.push('', '<i>Simule uma compra: /posso 2400 10x</i>')
+  return lines.join('\n')
+}
+
+export function canBuyMessage(amount: number, installments: number, card: import('./safeToSpend').CardPick | null, before: import('./safeToSpend').SafeToSpend, after: import('./safeToSpend').SafeToSpend): string {
+  const d5 = (iso: string) => formatDateBR(iso).slice(0, 5)
+  const how = card ? `${installments > 1 ? `${installments}x de ${formatBRL(amount / installments)}` : 'à vista'} no ${escapeHtml(card.institution)} ·${card.last4} (1ª fatura ${d5(card.due)})` : 'à vista (Pix/débito)'
+  return after.available >= 0
+    ? [`✅ <b>Cabe!</b> Compra de ${formatBRL(amount)} ${how}.`, '', `Depois dela, você ainda pode gastar <b>${formatBRL(after.available)}</b> até ${d5(after.until)} (hoje: ${formatBRL(before.available)}).`].join('\n')
+    : [`⚠️ <b>Não cabe agora.</b> Compra de ${formatBRL(amount)} ${how}.`, '', `Faltariam <b>${formatBRL(-after.available)}</b>${after.shortfall ? ` — o saldo ficaria em ${formatBRL(after.shortfall.value)} em ${d5(after.shortfall.date)}` : ''}.`].join('\n')
+}
