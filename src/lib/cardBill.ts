@@ -10,6 +10,21 @@ export type BillInfo = {
   closedDueDate: string | null
   openDue: string | null      // vencimento previsto da fatura aberta
   method: string              // como foi calculado (diagnóstico)
+  items: BillItem[]           // o que compõe a fatura aberta
+}
+
+export type BillItem = { date: string; description: string; amount: number; inst?: string }
+export type CardDays = { closeDay?: number | null; dueDay?: number | null }
+
+/** Próxima data (>= from) com o dia do mês `d` (ajusta para o último dia em meses curtos). */
+export function nextDayOfMonth(from: string, d: number, strictlyAfter = false): string {
+  const [y, m] = from.split('-').map(Number)
+  for (let k = 0; k < 3; k++) {
+    const last = new Date(Date.UTC(y, m - 1 + k + 1, 0)).getUTCDate()
+    const t = new Date(Date.UTC(y, m - 1 + k, Math.min(d, last))).toISOString().slice(0, 10)
+    if (strictlyAfter ? t > from : t >= from) return t
+  }
+  return from
 }
 
 export function addMonthsDate(iso: string, n: number): string {
@@ -34,7 +49,7 @@ export function sumTxs(txs: PluggyTx[]): number {
 
 const day = (s?: string | null) => (s ? s.slice(0, 10) : null)
 
-export function computeBill(txs: PluggyTx[], bills: PluggyBill[], closeHint: string | null | undefined, dueHint: string | null | undefined, today: string): BillInfo {
+export function computeBill(txs: PluggyTx[], bills: PluggyBill[], closeHint: string | null | undefined, dueHint: string | null | undefined, today: string, days: CardDays = {}): BillInfo {
   const sorted = [...bills].sort((a, b) => (day(a.billClosingDate) || day(a.dueDate)!).localeCompare(day(b.billClosingDate) || day(b.dueDate)!))
   const last = sorted[sorted.length - 1]
   const lastClose = day(last?.billClosingDate) || (last ? addDays(day(last.dueDate)!, -7) : day(closeHint) || (dueHint ? addDays(day(dueHint)!, -7) : null))
@@ -53,13 +68,25 @@ export function computeBill(txs: PluggyTx[], bills: PluggyBill[], closeHint: str
   const unbilled = txs.filter((t) => !t.creditCardMetadata?.billId && !isBillPayment(t))
   const validPeriod = (f?: string | null) => (f && /^20\d\d-(0[1-9]|1[0-2])$/.test(f) ? f : null)
   const isInst = (t: PluggyTx) => (t.creditCardMetadata?.totalInstallments || 0) > 1
-  const single = unbilled.filter((t) => !isInst(t) && day(t.date)! <= today)
   const inst = unbilled.filter(isInst)
+
+  // Fechamento: o que você definiu > o que o banco informa
+  const autoClose = lastClose ? (() => { let c = lastClose; while (c < today) c = addMonthsDate(c, 1); return c })() : null
+  const nextClose = days.closeDay ? nextDayOfMonth(today, days.closeDay) : autoClose
+  const prevClose = nextClose ? addMonthsDate(nextClose, -1) : null
+  // Compras à vista sem fatura: só as do ciclo atual (sem previsão do banco, pela data)
+  const single = unbilled.filter((t) => {
+    if (isInst(t) || day(t.date)! > today) return false
+    if (validPeriod(t.creditCardMetadata?.billForecastDate)) return true
+    return !prevClose || day(t.date)! > addDays(prevClose, -3)
+  })
 
   // Período da fatura aberta: o mais recente entre as compras à vista; sem elas, o primeiro das parcelas
   const singlePeriods = single.map((t) => validPeriod(t.creditCardMetadata?.billForecastDate)).filter(Boolean) as string[]
   const instPeriods = inst.map((t) => validPeriod(t.creditCardMetadata?.billForecastDate)).filter(Boolean) as string[]
   const period = singlePeriods.sort().pop() || instPeriods.sort()[0] || null
+  // à vista com previsão anterior à fatura aberta = sobra antiga sem billId: fica de fora
+  const singles = period ? single.filter((t) => { const f = validPeriod(t.creditCardMetadata?.billForecastDate); return !f || f >= period }) : single
 
   let installments: PluggyTx[]
   if (period) {
@@ -75,12 +102,19 @@ export function computeBill(txs: PluggyTx[], bills: PluggyBill[], closeHint: str
     }
     installments = [...next.values()]
   }
-  const open = sumTxs([...single, ...installments])
-  const nextClose = lastClose ? (() => { let c = lastClose; while (c < today) c = addMonthsDate(c, 1); return c })() : null
+  const included = [...singles, ...installments]
+  const open = sumTxs(included)
+  const items: BillItem[] = included.map((t) => ({
+    date: day(t.creditCardMetadata?.purchaseDate) || day(t.date)!,
+    description: t.description || t.descriptionRaw || 'Compra',
+    amount: t.type === 'CREDIT' ? -Math.abs(Number(t.amount)) : Math.abs(Number(t.amount)),
+    ...(isInst(t) ? { inst: `${t.creditCardMetadata?.installmentNumber || '?'}/${t.creditCardMetadata?.totalInstallments}` } : {}),
+  })).sort((a, b) => b.date.localeCompare(a.date))
   // Vencimento da fatura aberta: o mês seguinte ao da fechada pendente, ou o próximo vencimento a partir do último conhecido
   const lastDue = day(last?.dueDate) || day(dueHint)
   let openDue: string | null = null
-  if (closedDue && closedDueDate) openDue = addMonthsDate(closedDueDate, 1)
+  if (days.dueDay && nextClose) openDue = nextDayOfMonth(nextClose, days.dueDay, true)
+  else if (closedDue && closedDueDate) openDue = addMonthsDate(closedDueDate, 1)
   else if (lastDue) { let d = lastDue; while (d < today) d = addMonthsDate(d, 1); openDue = d }
-  return { open, openCloses: nextClose, closedDue, closedDueDate, openDue, method: period ? `não faturadas até ${period}` : 'não faturadas' }
+  return { open, openCloses: nextClose, closedDue, closedDueDate, openDue, method: period ? `não faturadas até ${period}` : 'não faturadas', items }
 }

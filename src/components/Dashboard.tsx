@@ -242,7 +242,7 @@ export default function Dashboard(p: Props) {
       </Card>
       </section>
       <section className={cx('space-y-4', section !== 'patrimonio' && 'lg:hidden')}>
-      {isCurrent && <NetWorthCard refreshKey={p.settlementKey} />}
+      {isCurrent && <NetWorthCard refreshKey={p.settlementKey} txs={txs} recurring={recurring} />}
       {/* METAS + ACERTO */}
       <div className={cx('grid gap-4', p.partnerEmail && 'lg:grid-cols-2')}>
         <GoalsCard goals={p.goals} onChange={p.onGoalsChange} />

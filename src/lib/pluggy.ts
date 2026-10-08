@@ -146,6 +146,7 @@ export async function ensureWebhook(url: string, secret: string) {
 
 /** Saldo exibido no painel (conta: saldo disponível · cartão: fatura atual) */
 export type BankBalance = {
+  id?: string
   institution: string
   type: 'Conta' | 'Cartão'
   name: string
@@ -158,6 +159,9 @@ export type BankBalance = {
   openDue?: string | null  // vencimento previsto da fatura aberta
   usedLimit?: number       // limite usado total (inclui parcelas futuras)
   billMethod?: string
+  items?: import('./cardBill').BillItem[]   // compras que compõem a fatura aberta
+  closeDay?: number | null                  // definidos por você
+  dueDay?: number | null
   creditLimit?: number | null
   available?: number | null
   dueDate?: string | null

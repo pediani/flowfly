@@ -1,11 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { ChevronDown, Landmark, LineChart as LineIcon } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowRight, ChevronDown, Landmark, LineChart as LineIcon } from 'lucide-react'
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { formatBRL, formatBRLCompact } from '../lib/format'
-import { monthLabel } from '../lib/dates'
+import { daysInMonth, formatDateBR, monthKeyOf, monthLabel, todayBR } from '../lib/dates'
+import { buildCashFlow } from '../lib/cashflow'
+import { computeSafeToSpend } from '../lib/safeToSpend'
+import type { Recurring, Tx } from '../lib/finance'
+import { useBankBalances } from './useBankBalances'
 import type { NetWorth } from '../lib/networth'
 import { play } from '../lib/sounds'
 import { Card, CardHeader, Money, cx } from './ui'
@@ -13,7 +17,7 @@ import { Card, CardHeader, Money, cx } from './ui'
 type Snap = { month: string; cash: number; investments: number; debts: number; net: number }
 
 /** Patrimônio: contas + investimentos − dívidas, com evolução mês a mês. */
-export default function NetWorthCard({ refreshKey }: { refreshKey: number }) {
+export default function NetWorthCard({ refreshKey, txs, recurring }: { refreshKey: number; txs: Tx[]; recurring: Recurring[] }) {
   const [data, setData] = useState<{ current: NetWorth | null; history: Snap[] } | null>(null)
   const [open, setOpen] = useState(false)
 
@@ -28,27 +32,63 @@ export default function NetWorthCard({ refreshKey }: { refreshKey: number }) {
     return () => { alive = false }
   }, [refreshKey])
 
+  const accounts = useBankBalances(refreshKey)
+  const today = todayBR()
+  const endOfMonth = `${monthKeyOf(today)}-${daysInMonth(monthKeyOf(today))}`
+  // Previsão até o fim do mês: entradas e contas fixas/agendadas (faturas já estão descontadas no "hoje")
+  const forecast = useMemo(() => {
+    if (!accounts?.length) return null
+    const unsynced = computeSafeToSpend(accounts, recurring, txs, { today })?.unsynced ?? 0
+    const events = buildCashFlow(accounts, recurring, txs, endOfMonth, today).events.filter((e) => e.kind !== 'fatura')
+    return {
+      unsynced,
+      inflow: events.filter((e) => e.amount > 0),
+      outflow: events.filter((e) => e.amount < 0),
+      delta: Math.round(events.reduce((sum, e) => sum + e.amount, 0) * 100) / 100,
+    }
+  }, [accounts, recurring, txs, today, endOfMonth])
+
   const c = data?.current
   if (!c) return null
+  const now = Math.round((c.net + (forecast?.unsynced ?? 0)) * 100) / 100
+  const end = Math.round((now + (forecast?.delta ?? 0)) * 100) / 100
+  const inSum = (forecast?.inflow || []).reduce((s2, e) => s2 + e.amount, 0)
+  const outSum = (forecast?.outflow || []).reduce((s2, e) => s2 + e.amount, 0)
   const hist = (data?.history || []).map((h) => ({ ...h, label: monthLabel(h.month, 'short'), net: Number(h.net) }))
   const prev = hist.length >= 2 ? hist[hist.length - 2].net : null
 
   return (
     <Card delay={220}>
-      <CardHeader title="Patrimônio" icon={<LineIcon className="h-4 w-4 text-muted" />} subtitle="Contas + investimentos − faturas a pagar. Parcelas futuras ficam à parte." />
+      <CardHeader title="Patrimônio" icon={<LineIcon className="h-4 w-4 text-muted" />} subtitle="Tudo o que é seu (contas + investimentos) menos o que você já deve no cartão, e para onde isso vai até o fim do mês." />
       <div className="grid gap-4 px-5 pb-5 md:grid-cols-[1fr_1.3fr]">
         <div>
-          <Money value={c.net} className={cx('block text-3xl font-semibold tracking-tight', c.net < 0 && 'text-expense')} />
+          <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
+            <div>
+              <p className="text-[11px] text-muted">Hoje</p>
+              <Money value={now} className={cx('block text-2xl font-semibold tracking-tight', now < 0 && 'text-expense')} />
+            </div>
+            <ArrowRight className="mb-2 h-4 w-4 text-muted" />
+            <div>
+              <p className="text-[11px] text-muted">Fim de {monthLabel(monthKeyOf(today))} (previsto)</p>
+              <Money value={end} className={cx('block text-3xl font-semibold tracking-tight', end < 0 ? 'text-expense' : 'text-ink')} />
+            </div>
+          </div>
+          {forecast && (
+            <p className="mt-2 text-[11px] text-muted">
+              <b className="text-income">+ {formatBRL(inSum)}</b> que entra{forecast.inflow.length ? ` (${forecast.inflow.slice(0, 3).map((e) => `${e.label} ${formatDateBR(e.date).slice(0, 5)}`).join(', ')})` : ''}
+              {' '}<b className="text-expense">− {formatBRL(-outSum)}</b> em contas fixas e agendadas até {formatDateBR(endOfMonth).slice(0, 5)}. As faturas já estão descontadas no “hoje”.
+            </p>
+          )}
           {prev !== null && <p className={cx('mt-1 text-xs', c.net >= prev ? 'text-income' : 'text-expense')}>{c.net >= prev ? '▲' : '▼'} {formatBRL(Math.abs(c.net - prev))} vs mês anterior</p>}
-          <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-            <Box label="Contas" value={c.cash} />
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+            <Box label="Contas" value={c.cash + (forecast?.unsynced ?? 0)} />
             <Box label="Investimentos" value={c.investments} tone="text-income" />
             <Box label="Faturas a pagar" value={-c.debts} tone="text-expense" />
+            <Box label="Parcelas futuras" value={-c.futureInstallments} tone="text-muted" />
           </div>
           {c.futureInstallments > 0 && (
             <p className="mt-2 text-[11px] text-muted">
-              + <b className="text-ink">{formatBRL(c.futureInstallments)}</b> em parcelas que caem nas próximas faturas (não descontado acima).
-              {' '}Considerando tudo: <b className="text-ink">{formatBRL(c.net - c.futureInstallments)}</b>.
+              Parcelas futuras são compromissos dos próximos meses: não entram no “hoje”. Se quitasse tudo agora: <b className="text-ink">{formatBRL(now - c.futureInstallments)}</b>.
             </p>
           )}
         </div>

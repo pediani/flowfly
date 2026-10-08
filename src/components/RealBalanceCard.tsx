@@ -11,6 +11,7 @@ import type { Recurring, Tx } from '../lib/finance'
 import { play } from '../lib/sounds'
 import { Card, Money, Sheet, cx } from './ui'
 import { useBankBalances } from './useBankBalances'
+import CardBillSheet from './CardBillSheet'
 
 const RESERVE_KEY = 'flowfly:reserve'
 const readReserve = () => { try { return Number(localStorage.getItem(RESERVE_KEY)) || 0 } catch { return 0 } }
@@ -24,6 +25,7 @@ export default function RealBalanceCard({ txs, recurring, refreshKey }: { txs: T
   const [showHow, setShowHow] = useState(false)
   const [detail, setDetail] = useState<Detail | null>(null)
   const [bestOpen, setBestOpen] = useState(false)
+  const [cardOpen, setCardOpen] = useState<string | null>(null)
   const [open, setOpen] = useState<'dias' | 'comprar' | 'contas' | null>(null)
   // simulador
   const [simAmount, setSimAmount] = useState('')
@@ -152,12 +154,13 @@ export default function RealBalanceCard({ txs, recurring, refreshKey }: { txs: T
       )}
 
       <DetailSheet detail={detail} onClose={() => setDetail(null)} safe={safe} accounts={accounts} />
+      <CardBillSheet card={accounts.find((a) => (a.id || a.last4) === cardOpen) ?? null} onClose={() => setCardOpen(null)} />
       <BestCardSheet open={bestOpen} onClose={() => setBestOpen(false)} accounts={accounts} today={today} />
 
       {open === 'contas' && (
         <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 animate-fade-in">
           {accounts.map((a, i) => (
-            <div key={i} className="flex min-w-0 items-center gap-3 rounded-xl border border-line px-3 py-2.5">
+            <button type="button" key={i} disabled={a.type !== 'Cartão'} onClick={() => { play('tap'); setCardOpen(a.id || a.last4) }} className="flex min-w-0 items-center gap-3 rounded-xl border border-line px-3 py-2.5 text-left transition enabled:hover:border-accent">
               <span className={cx('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', a.type === 'Cartão' ? 'bg-expense/10 text-expense' : 'bg-income/10 text-income')}>
                 {a.type === 'Cartão' ? <CreditCard className="h-4 w-4" /> : <Landmark className="h-4 w-4" />}
               </span>
@@ -165,14 +168,14 @@ export default function RealBalanceCard({ txs, recurring, refreshKey }: { txs: T
                 <p className="truncate text-sm font-medium">{a.institution} · {a.name}{a.last4 ? ` ·${a.last4}` : ''}</p>
                 <p className="text-[11px] text-muted">
                   {a.type === 'Cartão'
-                    ? <>Fatura aberta{a.openCloses ? ` · fecha ${d5(a.openCloses)}` : ''}{a.openDue ? ` · vence ${d5(a.openDue)}` : ''}{a.closedDue ? ` · fechada a pagar ${formatBRL(a.closedDue)}` : ''}</>
+                    ? <>Fatura aberta · ver itens{a.openCloses ? ` · fecha ${d5(a.openCloses)}` : ''}{a.openDue ? ` · vence ${d5(a.openDue)}` : ''}{a.closedDue ? ` · fechada a pagar ${formatBRL(a.closedDue)}` : ''}</>
                     : 'Saldo disponível'}
                 </p>
               </div>
               <span className={cx('shrink-0 whitespace-nowrap tabular text-sm font-semibold', a.type === 'Cartão' || a.balance < 0 ? 'text-expense' : 'text-ink')}>
                 {a.type === 'Cartão' || a.balance < 0 ? '−' : ''} {formatBRL(Math.abs(a.type === 'Cartão' ? (a.openBill ?? a.balance) : a.balance))}
               </span>
-            </div>
+            </button>
           ))}
         </div>
       )}
