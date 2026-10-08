@@ -1,5 +1,5 @@
 // Mensagens do bot (HTML do Telegram). Funções puras: o route.ts faz o I/O.
-import { CATEGORIES, getCategory } from './categories'
+import { allCategories, getCategory } from './categories'
 import { formatBRL } from './format'
 import { dateOfIsoBR, formatDateBR, formatDateTimeBR, monthLabel } from './dates'
 import {
@@ -189,7 +189,7 @@ export function entryKeyboard(txId: string, opts: { canSplit: boolean; isIn: boo
 
 export function categoryKeyboard(txId: string): Keyboard {
   const rows: InlineButton[][] = []
-  CATEGORIES.forEach((c, i) => {
+  allCategories().forEach((c, i) => {
     if (i % 2 === 0) rows.push([])
     rows[rows.length - 1].push({ text: `${c.emoji} ${c.name}`, callback_data: `s:${txId}:${i}` })
   })

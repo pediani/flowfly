@@ -1,6 +1,6 @@
 // Groq (plano gratuito): transcrição de áudio (Whisper) e interpretação de frases livres.
 // Só roda no servidor. Requer GROQ_API_KEY. Cada chamada é registrada em ai_usage.
-import { CATEGORY_NAMES } from './categories'
+import { categoryNames } from './categories'
 import { resolveDateToken, type ParsedEntry } from './parseEntry'
 import { todayBR } from './dates'
 import { logAiUsage, rateLimitHeaders } from './aiUsage'
@@ -60,7 +60,7 @@ export async function interpretMany(text: string, ctx: { userId?: string; purpos
     'Você extrai lançamentos financeiros de mensagens em português do Brasil. Uma mensagem pode ter VÁRIOS lançamentos.',
     `Hoje é ${today}. Responda SOMENTE um JSON no formato {"items": [ ... ]}, onde cada item tem:`,
     '{"type": "saida"|"entrada", "description": string curta (2-4 palavras, sem valor nem data), "amount": number em reais,',
-    ` "category": uma de [${CATEGORY_NAMES.join(', ')}], "date": "YYYY-MM-DD", "installments": inteiro (1 se à vista)}`,
+    ` "category": uma de [${categoryNames().join(', ')}], "date": "YYYY-MM-DD", "installments": inteiro (1 se à vista)}`,
     'Números por extenso viram dígitos ("trinta e cinco e noventa" = 35.90; "12 reais e 50 centavos" = 12.50; "12 e 50" = 12.50). "recebi", "ganhei", "salário" = entrada; "gastei", "paguei", "comprei" = saída.',
     'Se um item não disser o tipo ou a data, use os do item anterior. Se não houver lançamento, responda {"items": []}.',
   ].join('\n')
@@ -108,7 +108,7 @@ export async function interpretMany(text: string, ctx: { userId?: string; purpos
       const type: 'entrada' | 'saida' = it.type === 'entrada' ? 'entrada' : it.type === 'saida' ? 'saida' : lastType
       const rawDate = String(it.date || '')
       const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) && rawDate <= today ? rawDate : (resolveDateToken(rawDate, today) ?? lastDate)
-      const category = CATEGORY_NAMES.includes(String(it.category)) ? String(it.category) : type === 'entrada' ? 'Renda' : 'Geral'
+      const category = categoryNames().includes(String(it.category)) ? String(it.category) : type === 'entrada' ? 'Renda' : 'Geral'
       const installments = type === 'saida' ? Math.min(48, Math.max(1, Math.round(Number(it.installments) || 1))) : 1
       entries.push({ type, description: String(it.description).slice(0, 200), amount, category, categoryExplicit: false, date, installments })
       lastType = type
@@ -140,7 +140,7 @@ export async function readReceipt(image: Blob, mime: string, ctx: { userId?: str
     'Você lê fotos de comprovantes (Pix, transferência, cartão), notas fiscais e cupons em português do Brasil.',
     `Hoje é ${today}. Responda SOMENTE um JSON {"items": [ ... ]} com UM item pelo valor TOTAL pago (não liste os produtos), com:`,
     '{"type": "saida"|"entrada", "description": nome do estabelecimento ou do destinatário (2-4 palavras), "amount": number em reais,',
-    ` "category": uma de [${CATEGORY_NAMES.join(', ')}], "date": "YYYY-MM-DD" (data do comprovante), "installments": inteiro}`,
+    ` "category": uma de [${categoryNames().join(', ')}], "date": "YYYY-MM-DD" (data do comprovante), "installments": inteiro}`,
     'Pix ou transferência RECEBIDA = entrada; paga/enviada = saída. Se não for um comprovante, responda {"items": []}.',
   ].join('\n')
   const body = (json: boolean) => JSON.stringify({
@@ -184,7 +184,7 @@ export async function readReceipt(image: Blob, mime: string, ctx: { userId?: str
       const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) && rawDate <= today ? rawDate : today
       entries.push({
         type, amount, date, description: String(it.description || 'Comprovante').slice(0, 200), categoryExplicit: false,
-        category: CATEGORY_NAMES.includes(String(it.category)) ? String(it.category) : type === 'entrada' ? 'Renda' : 'Geral',
+        category: categoryNames().includes(String(it.category)) ? String(it.category) : type === 'entrada' ? 'Renda' : 'Geral',
         installments: type === 'saida' ? Math.min(48, Math.max(1, Math.round(Number(it.installments) || 1))) : 1,
       })
     }

@@ -2,7 +2,7 @@
 import { detectCategory, getCategory, normalize } from './categories'
 import { addDays, formatDateBR, todayBR } from './dates'
 import { formatBRL } from './format'
-import { TX_COLS, type Db, type TxRow } from './botData'
+import { TX_COLS, loadUserCategories, type Db, type TxRow } from './botData'
 import { getItem, listAccounts, listTransactions, type PluggyAccount, type PluggyTx } from './pluggy'
 import { escapeHtml, type Keyboard } from './telegramBot'
 import { sendMessage } from './telegramApi'
@@ -113,6 +113,7 @@ export function accountLabel(institution: string | null, a: PluggyAccount): stri
 export type SyncResult = { imported: TxRow[]; matched: number; skipped: number; institution: string | null }
 
 export async function syncConnection(db: Db, conn: BankConnection, opts: { initialDays?: number } = {}): Promise<SyncResult> {
+  await loadUserCategories(db, conn.user_id)
   const item = await getItem(conn.item_id)
   const accounts = await listAccounts(conn.item_id)
   const institution = resolveInstitution(conn.institution, item.connector?.name, accounts)

@@ -10,13 +10,16 @@ import { detectCategory } from '../lib/categories'
 import { play } from '../lib/sounds'
 import { Card, CardHeader, EmptyState, Segmented, cx, inputClass, primaryButton } from './ui'
 import SubscriptionsCard from './SubscriptionsCard'
+import CategoriesCard, { type CategoryRow } from './CategoriesCard'
 
-export default function RecurringPanel({ userId, recurring, txs, onChange, onPaid }: {
+export default function RecurringPanel({ userId, recurring, txs, onChange, onPaid, categories = [], onCategoriesChange = () => {} }: {
   userId: string
   recurring: Recurring[]
   txs: Tx[]
   onChange: () => void
   onPaid: () => void
+  categories?: CategoryRow[]
+  onCategoriesChange?: () => void
 }) {
   const [type, setType] = useState<'saida' | 'entrada'>('saida')
   const [amount, setAmount] = useState('')
@@ -106,6 +109,7 @@ export default function RecurringPanel({ userId, recurring, txs, onChange, onPai
         </ul>
       </Card>
       <SubscriptionsCard userId={userId} txs={txs} recurring={recurring} onChange={onChange} />
+      <CategoriesCard rows={categories} onChange={onCategoriesChange} />
     </div>
   )
 }

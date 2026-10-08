@@ -10,7 +10,7 @@ import { supabase } from '../lib/supabase'
 import { addDays, addMonths, currentMonthKey, formatDateBR, monthLabel, todayBR } from '../lib/dates'
 import { detectAnomalies, detectSubscriptions } from '../lib/analysis'
 import { formatBRL } from '../lib/format'
-import { CATEGORY_NAMES, getCategory } from '../lib/categories'
+import { categoryNames, getCategory } from '../lib/categories'
 import {
   budgetStatus, buildInsights, categoryBreakdown, futureProjection, monthProjection, monthlyHistory,
   overallBalance, pendingDebts, summarize,
@@ -262,7 +262,7 @@ function CategoryCard({ userId, cats, totalOut, budgets, monthKey, onBudgetsChan
   const spent = Object.fromEntries(cats.map((c) => [c.category, c.total]))
   // Categorias com gasto ou com orçamento definido
   const rows = [...new Set([...cats.map((c) => c.category), ...budgets.map((b) => b.category)])]
-  const available = CATEGORY_NAMES.filter((c) => !limits[c] && c !== 'Renda')
+  const available = categoryNames().filter((c) => !limits[c] && c !== 'Renda')
 
   async function save(category: string, raw: string) {
     const v = parseFloat(raw.replace(/\./g, '').replace(',', '.'))

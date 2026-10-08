@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { CATEGORIES, detectCategory } from '../../../lib/categories'
+import { allCategories, detectCategory } from '../../../lib/categories'
 import { addDays, addMonths, currentMonthKey, daysInMonth, monthKeyOf, todayBR } from '../../../lib/dates'
 import { pendingRecurring } from '../../../lib/finance'
 import { answerQuestion, groqEnabled, readReceipt, transcribe } from '../../../lib/groq'
@@ -14,7 +14,7 @@ import { getBankBalances } from '../../../lib/balances'
 import { cardsForPurchase, computeSafeToSpend, purchaseEvents } from '../../../lib/safeToSpend'
 import { answerCallback, downloadFile, editKeyboard, editMessage, sendMessage, sendTyping } from '../../../lib/telegramApi'
 import {
-  TX_COLS, adminDb, entryFromRows, fetchBudgets, fetchRecurring, fetchTxs, fetchTxsBetween, findPartner, rowsOf,
+  TX_COLS, adminDb, entryFromRows, loadUserCategories, fetchBudgets, fetchRecurring, fetchTxs, fetchTxsBetween, findPartner, rowsOf,
   type Db, type TxRow,
 } from '../../../lib/botData'
 import { bankEntryMessage, bankKeyboard } from '../../../lib/bankSync'
@@ -74,6 +74,8 @@ export async function POST(request: Request) {
       await sendMessage(chatId, '👋 <b>Bem-vindo ao FlowFly!</b>\n\nPara começar, abra o painel, vá na aba <b>Conexões</b> e toque em <b>Conectar Telegram</b>.')
       return NextResponse.json({ ok: true })
     }
+
+    await loadUserCategories(db, userId)
 
     // Foto de comprovante → lançamento
     if (image) {
@@ -304,6 +306,7 @@ async function handleCallback(db: Db, cq: CallbackQuery) {
 
   const userId = await userOfChat(db, chatId)
   if (!userId) { await answerCallback(cq.id, 'Conta não vinculada'); return }
+  await loadUserCategories(db, userId)
 
   const [action, id, extra] = cq.data.split(':')
 
@@ -350,7 +353,7 @@ async function handleCallback(db: Db, cq: CallbackQuery) {
       await editKeyboard(chatId, messageId, kb)
       return
     case 's': {
-      const cat = CATEGORIES[Number(extra)]
+      const cat = allCategories()[Number(extra)]
       if (!cat) { await answerCallback(cq.id); return }
       const rows = await rowsOf(db, row)
       await db.from('transactions').update({ category: cat.name }).in('id', rows.map((r) => r.id))

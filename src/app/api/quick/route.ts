@@ -1,6 +1,6 @@
 import { createHash } from 'crypto'
 import { NextResponse } from 'next/server'
-import { adminDb } from '../../../lib/botData'
+import { adminDb, loadUserCategories } from '../../../lib/botData'
 import { saveEntries, understandText } from '../../../lib/entryPipeline'
 import { formatBRL } from '../../../lib/format'
 
@@ -25,6 +25,7 @@ export async function POST(request: Request) {
   if (!input) return text('Diga o lançamento, por exemplo: gastei 30 no uber.', 400)
 
   await adminDb.from('api_tokens').update({ last_used_at: new Date().toISOString() }).eq('id', tk.id)
+  await loadUserCategories(adminDb, tk.user_id)
   const entries = await understandText(adminDb, tk.user_id, input, 'atalho')
   if (!entries.length) return text(`Não entendi "${input}". Fale o valor e o que foi, por exemplo: uber 30 reais.`, 422)
 

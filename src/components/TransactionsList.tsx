@@ -18,12 +18,12 @@ const TYPE_LABEL: Record<string, string> = { entrada: 'Entrada', saida: 'Saída'
 /** CSV com ";" e vírgula decimal, que o Excel em português abre direto */
 function exportCsv(rows: Tx[], name: string) {
   const esc = (v: string) => `"${v.replace(/"/g, '""')}"`
-  const lines = [['Data', 'Hora', 'Tipo', 'Descrição', 'Categoria', 'Valor', 'Origem'].join(';')]
+  const lines = [['Data', 'Hora', 'Tipo', 'Descrição', 'Observação', 'Categoria', 'Valor', 'Origem'].join(';')]
   for (const t of rows) {
     const signed = (t.type === 'entrada' ? 1 : -1) * Number(t.amount)
     lines.push([
       formatDateBR(t.date), t.created_at ? formatTimeBR(t.created_at) : '', TYPE_LABEL[t.type] || t.type,
-      esc(t.description), esc(t.category || 'Geral'), signed.toFixed(2).replace('.', ','), t.source === 'telegram' ? 'Telegram' : t.source === 'bank' ? 'Banco' : 'Painel',
+      esc(t.description), esc(t.note || ''), esc(t.category || 'Geral'), signed.toFixed(2).replace('.', ','), t.source === 'telegram' ? 'Telegram' : t.source === 'bank' ? 'Banco' : 'Painel',
     ].join(';'))
   }
   const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
@@ -56,7 +56,7 @@ export default function TransactionsList({ txs, monthKey, onDelete, onPay, onEdi
       (allMonths || t.date.startsWith(monthKey)) &&
       (filter === 'all' || (filter === 'telegram' || filter === 'bank' ? t.source === filter : t.type === filter)) &&
       (!tag || (t.tags || []).includes(tag)) &&
-      (!q || normalize(`${t.description} ${t.category || ''} ${(t.tags || []).join(' ')}`).includes(q)))
+      (!q || normalize(`${t.description} ${t.note || ''} ${t.category || ''} ${(t.tags || []).join(' ')}`).includes(q)))
     const map = new Map<string, Tx[]>()
     for (const t of list) map.set(t.date, [...(map.get(t.date) || []), t])
     return [...map.entries()].map(([date, items]) => ({

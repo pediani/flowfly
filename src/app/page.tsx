@@ -16,6 +16,8 @@ import TransactionSheet from '../components/TransactionSheet'
 import TransactionsList from '../components/TransactionsList'
 import GroupsPanel from '../components/GroupsPanel'
 import type { Goal } from '../components/GoalsCard'
+import type { CategoryRow } from '../components/CategoriesCard'
+import { setCustomCategories } from '../lib/categories'
 
 export default function Home() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
@@ -24,6 +26,7 @@ export default function Home() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editing, setEditing] = useState<Tx | null>(null)
   const [goals, setGoals] = useState<Goal[]>([])
+  const [categories, setCategories] = useState<CategoryRow[]>([])
   const [settlementKey, setSettlementKey] = useState(0)
 
   const [txs, setTxs] = useState<Tx[]>([])
@@ -55,6 +58,13 @@ export default function Home() {
     setSettlementKey((k) => k + 1)
   }, [])
 
+  const loadCategories = useCallback(async () => {
+    const { data } = await supabase.from('categories').select('*').order('name')
+    const rows = (data as CategoryRow[]) || []
+    setCustomCategories(rows)
+    setCategories(rows)
+  }, [])
+
   const loadGoals = useCallback(async () => {
     const { data } = await supabase.from('goals').select('*').order('created_at', { ascending: true })
     setGoals((data as Goal[]) || [])
@@ -78,8 +88,8 @@ export default function Home() {
   const loadAll = useCallback(async () => {
     const { data: inst } = await supabase.from('installments').select('*')
     setInstallments((inst as Installment[]) || [])
-    await Promise.all([loadTransactions(), loadRecurring(), loadBudgets(), loadPartners(), loadGoals()])
-  }, [loadTransactions, loadRecurring, loadBudgets, loadPartners, loadGoals])
+    await Promise.all([loadCategories(), loadTransactions(), loadRecurring(), loadBudgets(), loadPartners(), loadGoals()])
+  }, [loadCategories, loadTransactions, loadRecurring, loadBudgets, loadPartners, loadGoals])
 
   useEffect(() => {
     if (!session) return
@@ -159,14 +169,14 @@ export default function Home() {
           />
         )}
         {tab === 'lancamentos' && <TransactionsList txs={txs} monthKey={monthKey} onDelete={handleDelete} onPay={handlePay} onEdit={handleEdit} recurring={recurring} refreshKey={settlementKey} />}
-        {tab === 'fixas' && <RecurringPanel userId={userId} recurring={recurring} txs={txs} onChange={loadRecurring} onPaid={loadTransactions} />}
+        {tab === 'fixas' && <RecurringPanel userId={userId} recurring={recurring} txs={txs} onChange={loadRecurring} onPaid={loadTransactions} categories={categories} onCategoriesChange={() => { loadCategories(); loadTransactions() }} />}
         {tab === 'grupos' && <GroupsPanel userId={userId} partners={partners} />}
         {tab === 'conexoes' && <ConnectionsPanel onPartnersChange={loadPartners} onBankSynced={loadTransactions} />}
       </AppShell>
 
       <TransactionSheet
         open={sheetOpen} onClose={() => { setSheetOpen(false); setEditing(null) }}
-        userId={userId} partners={partners} onSaved={loadTransactions} editing={editing}
+        userId={userId} partners={partners} onSaved={loadTransactions} editing={editing} onCategoriesChange={loadCategories}
       />
     </>
   )

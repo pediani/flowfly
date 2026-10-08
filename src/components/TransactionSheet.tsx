@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { ArrowDownRight, ArrowUpRight, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { CATEGORIES, detectCategory, type EntryType } from '../lib/categories'
+import { allCategories, detectCategory, type EntryType } from '../lib/categories'
 import { todayBR } from '../lib/dates'
 import { formatBRL } from '../lib/format'
 import type { Tx } from '../lib/finance'
@@ -11,6 +11,7 @@ import { installmentDate, splitInstallments } from '../lib/parseEntry'
 import { play } from '../lib/sounds'
 import type { Partnership } from './ConnectionsPanel'
 import { CategoryIcon } from './CategoryIcon'
+import { CategoryForm } from './CategoriesCard'
 import { Segmented, Sheet, cx, inputClass, primaryButton } from './ui'
 
 type Props = {
@@ -21,6 +22,7 @@ type Props = {
   onSaved: () => void
   /** Quando definido, o formulário edita este lançamento */
   editing?: Tx | null
+  onCategoriesChange?: () => Promise<void> | void
 }
 
 /** Remonta o formulário a cada abertura para carregar os valores certos */
@@ -32,15 +34,18 @@ export default function TransactionSheet(props: Props) {
   )
 }
 
-function Form({ onClose, userId, partners, onSaved, editing }: Props) {
+function Form({ onClose, userId, partners, onSaved, editing, onCategoriesChange }: Props) {
   const [type, setType] = useState<EntryType>(editing?.type === 'entrada' ? 'entrada' : 'saida')
-  const [amount, setAmount] = useState(editing ? String(editing.amount).replace('.', ',') : '')
+  const [amount, setAmount] = useState(editing ? Number(editing.amount).toFixed(2).replace('.', ',') : '')
   const [description, setDescription] = useState(editing?.description || '')
   const [category, setCategory] = useState(editing?.category || 'Geral')
   const [categoryTouched, setCategoryTouched] = useState(!!editing)
   const [date, setDate] = useState(editing?.date || todayBR())
   const [installments, setInstallments] = useState(1)
   const [tagsText, setTagsText] = useState((editing?.tags || []).map((t) => `@${t}`).join(' '))
+  const [note, setNote] = useState(editing?.note || '')
+  const [creatingCat, setCreatingCat] = useState(false)
+  const fromBank = editing?.source === 'bank'
   const [split, setSplit] = useState(false)
   const [partnerId, setPartnerId] = useState('')
   const [saving, setSaving] = useState(false)
@@ -77,7 +82,7 @@ function Form({ onClose, userId, partners, onSaved, editing }: Props) {
 
     if (editing) {
       ({ error: err } = await supabase.from('transactions')
-        .update({ amount: value, description: desc, type, category, date, ...tagField })
+        .update({ amount: value, description: desc, type, category, date, ...tagField, ...(note.trim() || editing.note ? { note: note.trim() || null } : {}) })
         .eq('id', editing.id))
     } else if (doSplit) {
       ({ error: err } = await supabase.rpc('create_split_transaction', {
@@ -94,6 +99,7 @@ function Form({ onClose, userId, partners, onSaved, editing }: Props) {
     } else {
       ({ error: err } = await supabase.from('transactions').insert({
         user_id: userId, amount: value, description: desc, type, category, is_split: false, date, source: 'web', ...tagField,
+        ...(note.trim() ? { note: note.trim() } : {}),
       }))
     }
     setSaving(false)
@@ -131,7 +137,15 @@ function Form({ onClose, userId, partners, onSaved, editing }: Props) {
         )}
       </label>
 
-      <input value={description} onChange={(e) => changeDescription(e.target.value)} placeholder={isIn ? 'Ex.: salário, freela…' : 'Ex.: mercado, uber, pizza…'} className={inputClass} maxLength={200} />
+      {fromBank ? (
+        <div className="rounded-xl border border-line bg-surface-2/50 px-3.5 py-2.5">
+          <p className="text-[11px] text-muted">Descrição do banco (mantida como veio do import)</p>
+          <p className="truncate text-sm">{description}</p>
+        </div>
+      ) : (
+        <input value={description} onChange={(e) => changeDescription(e.target.value)} placeholder={isIn ? 'Ex.: salário, freela…' : 'Ex.: mercado, uber, pizza…'} className={inputClass} maxLength={200} />
+      )}
+      <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={fromBank ? 'Sua descrição (ex.: Jantar com a Bia)' : 'Observação (opcional)'} className={inputClass} maxLength={200} />
 
       <div className={cx('grid gap-3', !isIn && !editing ? 'grid-cols-2' : 'grid-cols-1')}>
         <label className="block">
@@ -154,7 +168,9 @@ function Form({ onClose, userId, partners, onSaved, editing }: Props) {
       <div>
         <p className="mb-2 text-xs text-muted">Categoria {!categoryTouched && description && <span className="text-accent">· sugerida automaticamente</span>}</p>
         <div className="flex flex-wrap gap-2">
-          {CATEGORIES.map((c) => (
+          <button type="button" onClick={() => { play('tap'); setCreatingCat(!creatingCat) }}
+            className="inline-flex items-center gap-1 rounded-lg border border-dashed border-line px-2.5 py-1 text-sm text-muted hover:text-ink">+ Nova</button>
+          {allCategories().map((c) => (
             <button
               key={c.name} type="button"
               onClick={() => { play('tap'); setCategory(c.name); setCategoryTouched(true) }}
@@ -168,6 +184,10 @@ function Form({ onClose, userId, partners, onSaved, editing }: Props) {
           ))}
         </div>
       </div>
+
+      {creatingCat && (
+        <CategoryForm onCancel={() => setCreatingCat(false)} onSaved={async (name) => { await onCategoriesChange?.(); setCategory(name); setCategoryTouched(true); setCreatingCat(false) }} />
+      )}
 
       {!isIn && !editing && installments === 1 && (
         <div className="rounded-xl border border-line p-3.5 space-y-3">

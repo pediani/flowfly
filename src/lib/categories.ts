@@ -22,6 +22,30 @@ export const CATEGORIES: CategoryDef[] = [
   { name: 'Geral', emoji: '📌', icon: 'tag', color: '#71717a', keywords: [] },
 ]
 
+// ---- Categorias personalizadas (tabela categories) ----
+
+export type CustomCategoryRow = { id?: string; name: string; emoji?: string | null; color?: string | null; icon?: string | null; keywords?: string[] | null; type?: string | null }
+
+let custom: CategoryDef[] = []
+
+/** Registra as categorias do usuário (chamado pelo painel ao carregar e pelo bot a cada mensagem). */
+export function setCustomCategories(rows: CustomCategoryRow[]) {
+  custom = rows
+    .filter((r) => r.name && !CATEGORIES.some((c) => normalize(c.name) === normalize(r.name)))
+    .map((r) => ({
+      name: r.name.trim(), emoji: r.emoji || '🏷️', icon: r.icon || 'tag', color: r.color || '#8b5cf6',
+      keywords: [...(r.keywords || []).map((k) => normalize(k)), normalize(r.name)],
+    }))
+}
+
+/** Padrões + personalizadas (Geral sempre por último). */
+export function allCategories(): CategoryDef[] {
+  const base = CATEGORIES.filter((c) => c.name !== 'Geral')
+  return [...base, ...custom, CATEGORIES.find((c) => c.name === 'Geral')!]
+}
+
+export const categoryNames = () => allCategories().map((c) => c.name)
+/** @deprecated use categoryNames() — mantido para compatibilidade */
 export const CATEGORY_NAMES = CATEGORIES.map((c) => c.name)
 
 const FALLBACK: CategoryDef = { name: 'Geral', emoji: '📌', icon: 'tag', color: '#71717a', keywords: [] }
@@ -33,14 +57,14 @@ export function normalize(s: string): string {
 export function getCategory(name?: string | null): CategoryDef {
   if (!name) return FALLBACK
   const n = normalize(name)
-  return CATEGORIES.find((c) => normalize(c.name) === n) || { ...FALLBACK, name }
+  return allCategories().find((c) => normalize(c.name) === n) || { ...FALLBACK, name }
 }
 
 /** Detecta a categoria pela descrição. Vence a palavra-chave mais longa ("mercado livre" > "mercado"). */
 export function detectCategory(description: string, type: EntryType): string {
   const text = ` ${normalize(description).replace(/[^a-z0-9 ]/g, ' ')} `
   let best: { name: string; len: number } | null = null
-  for (const c of CATEGORIES) {
+  for (const c of allCategories()) {
     for (const k of c.keywords) {
       if (text.includes(` ${k} `) && (!best || k.length > best.len)) best = { name: c.name, len: k.length }
     }
@@ -53,5 +77,5 @@ export function detectCategory(description: string, type: EntryType): string {
 export function resolveCategoryTag(tag: string): string | null {
   const t = normalize(tag.replace(/^#/, ''))
   if (t.length < 3) return null
-  return CATEGORIES.find((c) => normalize(c.name).startsWith(t))?.name ?? null
+  return allCategories().find((c) => normalize(c.name).startsWith(t) || normalize(c.name).replace(/\s+/g, '-').startsWith(t))?.name ?? null
 }

@@ -16,6 +16,7 @@ export type Tx = {
   created_at?: string | null
   source?: string | null
   tags?: string[] | null
+  note?: string | null
 }
 
 export type Recurring = {

@@ -22,7 +22,8 @@ export function TransactionItem({ t, onDelete, onPay, onEdit, delay = 0 }: {
     <li className="group flex items-center gap-3 py-2.5 animate-fade-up" style={{ animationDelay: `${delay}ms` }}>
       <CategoryIcon category={t.category} />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{t.description}</p>
+        <p className="truncate text-sm font-medium">{t.note || t.description}</p>
+        {t.note && <p className="truncate text-[11px] text-muted">{t.description}</p>}
         <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
           <span>{t.category || 'Geral'}</span>
           <span>·</span>

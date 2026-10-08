@@ -1,6 +1,7 @@
 // Acesso ao banco pelo servidor (service role, ignora RLS) — usado pelo webhook e pelo cron.
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { daysInMonth } from './dates'
+import { setCustomCategories, type CustomCategoryRow } from './categories'
 import type { Budget, Recurring, Tx } from './finance'
 import { installmentDate, splitInstallments, type ParsedEntry } from './parseEntry'
 
@@ -90,4 +91,10 @@ export function entryFromRows(rows: TxRow[]): ParsedEntry {
     date: first.date,
     installments: first.installment_total || 1,
   }
+}
+
+/** Carrega as categorias personalizadas do usuário para o registro global (bot/cron). */
+export async function loadUserCategories(db: Db, userId: string) {
+  const { data } = await db.from('categories').select('*').eq('user_id', userId)
+  setCustomCategories((data || []) as CustomCategoryRow[])
 }
