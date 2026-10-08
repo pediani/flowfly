@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Inbox, X, type LucideIcon } from 'lucide-react'
 import { formatBRL } from '../lib/format'
 import { play } from '../lib/sounds'
@@ -142,8 +143,9 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
     return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev }
   }, [open, onClose])
 
-  if (!open) return null
-  return (
+  if (!open || typeof document === 'undefined') return null
+  // portal: cards com animação (transform) quebrariam o position: fixed do modal
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center" role="dialog" aria-modal="true" aria-label={title}>
       <div className="absolute inset-0 bg-black/60 animate-fade-in" onClick={onClose} />
       <div className="relative w-full max-h-[92dvh] overflow-y-auto rounded-t-3xl border border-line bg-surface pb-[max(1.25rem,env(safe-area-inset-bottom))] animate-sheet-up md:max-w-md md:rounded-2xl md:animate-pop">
@@ -158,7 +160,8 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
         </div>
         <div className="px-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

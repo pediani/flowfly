@@ -122,6 +122,18 @@ export async function listBills(accountId: string): Promise<PluggyBill[]> {
   return out
 }
 
+export type PluggyInvestment = { id: string; name?: string; type?: string; subtype?: string; balance?: number; amount?: number; currencyCode?: string; date?: string }
+
+export async function listInvestments(itemId: string): Promise<PluggyInvestment[]> {
+  const out: PluggyInvestment[] = []
+  for (let page = 1; page <= 5; page++) {
+    const r = await call<{ results: PluggyInvestment[]; totalPages?: number }>(`/investments?itemId=${encodeURIComponent(itemId)}&pageSize=100&page=${page}`)
+    out.push(...(r.results || []))
+    if (!r.totalPages || page >= r.totalPages) break
+  }
+  return out
+}
+
 /** Garante um webhook de "transactions/created" apontando para o FlowFly. */
 export async function ensureWebhook(url: string, secret: string) {
   const r = await call<{ results?: { url: string; event: string }[] } | { url: string; event: string }[]>('/webhooks')

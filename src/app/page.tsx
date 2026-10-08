@@ -14,6 +14,7 @@ import Dashboard from '../components/Dashboard'
 import RecurringPanel from '../components/RecurringPanel'
 import TransactionSheet from '../components/TransactionSheet'
 import TransactionsList from '../components/TransactionsList'
+import GroupsPanel from '../components/GroupsPanel'
 import type { Goal } from '../components/GoalsCard'
 
 export default function Home() {
@@ -159,6 +160,7 @@ export default function Home() {
         )}
         {tab === 'lancamentos' && <TransactionsList txs={txs} monthKey={monthKey} onDelete={handleDelete} onPay={handlePay} onEdit={handleEdit} recurring={recurring} refreshKey={settlementKey} />}
         {tab === 'fixas' && <RecurringPanel userId={userId} recurring={recurring} txs={txs} onChange={loadRecurring} onPaid={loadTransactions} />}
+        {tab === 'grupos' && <GroupsPanel userId={userId} partners={partners} />}
         {tab === 'conexoes' && <ConnectionsPanel onPartnersChange={loadPartners} onBankSynced={loadTransactions} />}
       </AppShell>
 

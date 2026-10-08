@@ -3,23 +3,24 @@
 import { useState, type ReactNode } from 'react'
 import {
   CalendarClock, ChevronLeft, ChevronRight, Home, ListOrdered, LogOut, Moon, PanelLeftClose, PanelLeftOpen,
-  Plus, Send, Sun, Volume2, VolumeX, Zap,
+  Plus, Send, Sun, Users, Volume2, VolumeX, Zap,
 } from 'lucide-react'
 import { addMonths, currentMonthKey, monthLabel } from '../lib/dates'
 import { isSoundOn, play, setSoundOn } from '../lib/sounds'
 import { applyTheme, getTheme, type Theme } from '../lib/theme'
 import { IconButton, cx } from './ui'
 
-export type Tab = 'inicio' | 'lancamentos' | 'fixas' | 'conexoes'
+export type Tab = 'inicio' | 'lancamentos' | 'fixas' | 'grupos' | 'conexoes'
 
 const NAV: { id: Tab; label: string; icon: typeof Home }[] = [
   { id: 'inicio', label: 'Início', icon: Home },
   { id: 'lancamentos', label: 'Lançamentos', icon: ListOrdered },
   { id: 'fixas', label: 'Contas fixas', icon: CalendarClock },
+  { id: 'grupos', label: 'Grupos', icon: Users },
   { id: 'conexoes', label: 'Conexões', icon: Send },
 ]
 
-const TITLES: Record<Tab, string> = { inicio: 'Visão geral', lancamentos: 'Lançamentos', fixas: 'Contas fixas', conexoes: 'Conexões' }
+const TITLES: Record<Tab, string> = { inicio: 'Visão geral', lancamentos: 'Lançamentos', fixas: 'Contas fixas', grupos: 'Grupos', conexoes: 'Conexões' }
 const SIDEBAR_KEY = 'flowfly:sidebar'
 
 function readCollapsed(): boolean {
@@ -143,6 +144,7 @@ export default function AppShell({ tab, onTab, monthKey, onMonth, onNew, onSignO
             <h1 className="hidden text-lg font-semibold tracking-tight lg:block">{TITLES[tab]}</h1>
             <div className="hidden md:block">{monthSelector}</div>
             <div className="flex gap-1 lg:hidden">
+              <IconButton onClick={() => go('grupos')} title="Grupos" className={tab === 'grupos' ? 'text-accent' : ''}><Users className="h-4 w-4" /></IconButton>
               {soundBtn}
               {themeBtn}
               <IconButton onClick={onSignOut} title="Sair"><LogOut className="h-4 w-4" /></IconButton>
@@ -167,7 +169,7 @@ export default function AppShell({ tab, onTab, monthKey, onMonth, onNew, onSignO
               <Plus className="h-5 w-5" />
             </button>
           </div>
-          {NAV.slice(2).map((n) => <NavButton key={n.id} {...n} active={tab === n.id} onClick={() => go(n.id)} />)}
+          {NAV.slice(2).filter((n) => n.id !== 'grupos').map((n) => <NavButton key={n.id} {...n} active={tab === n.id} onClick={() => go(n.id)} />)}
         </div>
       </nav>
     </div>

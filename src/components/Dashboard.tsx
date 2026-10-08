@@ -23,7 +23,8 @@ import { TransactionItem } from './TransactionItem'
 import GoalsCard, { type Goal } from './GoalsCard'
 import SettlementCard from './SettlementCard'
 import RealBalanceCard from './RealBalanceCard'
-import { Card, CardHeader, EmptyState, Money, cx } from './ui'
+import NetWorthCard from './NetWorthCard'
+import { Card, CardHeader, EmptyState, Money, Sheet, cx } from './ui'
 
 type Props = {
   userId: string
@@ -147,6 +148,8 @@ export default function Dashboard(p: Props) {
         <Legend items={[{ color: 'var(--income)', label: 'Entradas' }, { color: 'var(--expense)', label: 'Saídas' }, { color: 'var(--accent)', label: 'Saldo acumulado' }]} />
       </Card>
 
+      {isCurrent && <NetWorthCard refreshKey={p.settlementKey} />}
+
       {/* METAS + ACERTO */}
       <div className={cx('grid gap-4', p.partnerEmail && 'lg:grid-cols-2')}>
         <GoalsCard goals={p.goals} onChange={p.onGoalsChange} />
@@ -246,10 +249,11 @@ function Insights({ items }: { items: Insight[] }) {
   )
 }
 
-function CategoryCard({ userId, cats, totalOut, budgets, monthKey, onBudgetsChange }: Props & {
+function CategoryCard({ userId, cats, totalOut, budgets, monthKey, onBudgetsChange, txs, onEdit, onDelete, onPay }: Props & {
   cats: ReturnType<typeof categoryBreakdown>
   totalOut: number
 }) {
+  const [drill, setDrill] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [value, setValue] = useState('')
   const [adding, setAdding] = useState(false)
@@ -302,7 +306,8 @@ function CategoryCard({ userId, cats, totalOut, budgets, monthKey, onBudgetsChan
             <div className="relative mx-auto h-32 w-32">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={cats} dataKey="total" nameKey="category" innerRadius={46} outerRadius={62} paddingAngle={2} stroke="none" cornerRadius={3}>
+                  <Pie data={cats} dataKey="total" nameKey="category" innerRadius={46} outerRadius={62} paddingAngle={2} stroke="none" cornerRadius={3}
+                    onClick={(_d, index) => { const c = cats[index]?.category; if (c) { play('open'); setDrill(c) } }} className="cursor-pointer">
                     {cats.map((c) => <Cell key={c.category} fill={c.color} />)}
                   </Pie>
                 </PieChart>
@@ -323,7 +328,7 @@ function CategoryCard({ userId, cats, totalOut, budgets, monthKey, onBudgetsChan
                 <li key={name}>
                   <div className="flex items-center gap-2.5 text-sm">
                     <CategoryIcon category={name} size="sm" />
-                    <span className="min-w-0 flex-1 truncate">{name}</span>
+                    <button onClick={() => { play('open'); setDrill(name) }} className="min-w-0 flex-1 truncate text-left hover:text-accent hover:underline" title="Ver lançamentos">{name}</button>
                     <span className="tabular">{formatBRL(sp)}</span>
                     {limit ? <span className="tabular text-xs text-muted">/ {formatBRL(limit)}</span> : null}
                     <button onClick={() => { play('tap'); setEditing(editing === name ? null : name); setValue(limit ? String(limit).replace('.', ',') : '') }} className="rounded-md p-1 text-muted hover:text-ink" title="Definir orçamento">
@@ -348,6 +353,25 @@ function CategoryCard({ userId, cats, totalOut, budgets, monthKey, onBudgetsChan
           </ul>
         </div>
       ) : <EmptyState icon={Receipt} title="Sem saídas neste mês" text="Defina orçamentos em “+ Orçamento”." />}
+      <Sheet open={!!drill} onClose={() => setDrill(null)} title={drill ? `${drill} · ${monthLabel(monthKey)}` : ''}>
+        {drill && (() => {
+          const list = txs.filter((t) => t.date.startsWith(monthKey) && (t.category || 'Geral') === drill && (t.type === 'saida' || t.type === 'a_pagar'))
+            .sort((a, b) => Number(b.amount) - Number(a.amount))
+          const sum = list.filter((t) => t.type === 'saida').reduce((a, t) => a + Number(t.amount), 0)
+          const limit = limits[drill]
+          return (
+            <div className="pb-3">
+              <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+                <p className="text-2xl font-semibold tabular">{formatBRL(sum)}</p>
+                <p className="text-xs text-muted">{list.length} lançamento(s){totalOut ? ` · ${Math.round((sum / totalOut) * 100)}% das saídas` : ''}{limit ? ` · orçamento ${formatBRL(limit)}` : ''}</p>
+              </div>
+              {list.length
+                ? <ul className="divide-y divide-line">{list.map((t, i) => <TransactionItem key={t.id} t={t} onEdit={(x) => { setDrill(null); onEdit(x) }} onDelete={onDelete} onPay={onPay} delay={i * 20} />)}</ul>
+                : <EmptyState icon={Receipt} title="Nenhum lançamento nesta categoria" />}
+            </div>
+          )
+        })()}
+      </Sheet>
     </Card>
   )
 }

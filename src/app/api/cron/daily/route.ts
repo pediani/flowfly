@@ -8,6 +8,7 @@ import { sendMessage } from '../../../../lib/telegramApi'
 import { adminDb, fetchBudgets, fetchRecurring, fetchTxs, fetchTxsBetween, findPartner, type Db } from '../../../../lib/botData'
 import { notifyImported, syncConnection, type BankConnection } from '../../../../lib/bankSync'
 import { pluggyEnabled } from '../../../../lib/pluggy'
+import { computeNetWorth, saveSnapshot } from '../../../../lib/networth'
 
 // Roda todo dia às 12:00 UTC (9h em Brasília) — ver vercel.json.
 // A Vercel envia "Authorization: Bearer <CRON_SECRET>".
@@ -35,6 +36,10 @@ export async function GET(request: Request) {
       } catch (e) {
         console.error('Cron: sync Pluggy falhou', b.item_id, e)
       }
+    }
+    // foto diária do patrimônio (uma por usuário com banco)
+    for (const uid of [...new Set(((banks || []) as BankConnection[]).map((b) => b.user_id))]) {
+      try { const nw = await computeNetWorth(db, uid); if (nw) await saveSnapshot(db, uid, nw) } catch (e) { console.error('Cron: patrimônio', uid, e) }
     }
   }
 
