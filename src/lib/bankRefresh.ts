@@ -22,7 +22,10 @@ export async function refreshConnections(db: Db, conns: { id: string; item_id: s
       out.push({ id: c.id, institution: c.institution, ok: true, status: item.status })
     } catch (e) {
       const msg = String(e instanceof Error ? e.message : e)
-      out.push({ id: c.id, institution: c.institution, ok: false, error: /429|once per hour|rate/i.test(msg) ? 'limite da Pluggy: no máximo 1 atualização por hora' : msg.slice(0, 200) })
+      const error = /MeuPluggy item cant be updated/i.test(msg) ? 'meupluggy'
+        : /429|once per hour|rate/i.test(msg) ? 'limite da Pluggy: no máximo 1 atualização por hora'
+        : msg.slice(0, 200)
+      out.push({ id: c.id, institution: c.institution, ok: false, error })
     }
   }
   void db

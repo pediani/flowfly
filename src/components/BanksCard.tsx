@@ -78,8 +78,10 @@ export default function BanksCard({ onSynced }: { onSynced: () => void }) {
     setRefreshing('Pedindo atualização aos bancos…'); setMsg(null)
     const { ok, json } = await authed('/api/pluggy/refresh')
     if (!ok) { setRefreshing(null); play('error'); setMsg({ ok: false, text: json.error || 'Falha ao pedir atualização.' }); return }
-    const failed = (json.results || []).filter((r: { ok: boolean }) => !r.ok)
-    for (let i = 0; i < 36; i++) {
+    const failed = (json.results || []).filter((r: { ok: boolean; error?: string }) => !r.ok && r.error !== 'meupluggy')
+    const viaMeuPluggy = (json.results || []).filter((r: { error?: string }) => r.error === 'meupluggy').length
+    const started = (json.results || []).filter((r: { ok: boolean }) => r.ok).length
+    for (let i = 0; i < (started ? 36 : 0); i++) {
       await new Promise((r) => setTimeout(r, 5000))
       const st = await authed('/api/pluggy/status')
       const items = (st.json.items || {}) as typeof itemStatus
@@ -93,7 +95,8 @@ export default function BanksCard({ onSynced }: { onSynced: () => void }) {
     play(sync.json.imported ? 'income' : 'success')
     setMsg({
       ok: !failed.length,
-      text: `Atualizado: ${sync.json.imported ?? 0} novo(s), ${sync.json.matched ?? 0} juntado(s).` +
+      text: `Importado o que já estava disponível: ${sync.json.imported ?? 0} novo(s), ${sync.json.matched ?? 0} juntado(s).` +
+        (viaMeuPluggy ? ' Conexões pelo Meu Pluggy (gratuito) não aceitam atualização sob demanda: o banco é consultado 1 vez por dia, no horário indicado em cada banco. Quando os dados novos chegam, o FlowFly importa sozinho e avisa no Telegram.' : '') +
         (failed.length ? ` Não atualizou: ${failed.map((f: { institution: string; error: string }) => `${f.institution} (${f.error})`).join('; ')}.` : ''),
     })
     load(); onSynced()
@@ -122,7 +125,7 @@ export default function BanksCard({ onSynced }: { onSynced: () => void }) {
         </div>
         {conns.length > 0 && (
           <div className="flex shrink-0 gap-1.5">
-            <button onClick={() => { play('tap'); refreshNow() }} disabled={!!busy || !!refreshing} title="Pede dados novos ao banco (até 1 vez por hora)" className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-medium text-accent-ink disabled:opacity-50">
+            <button onClick={() => { play('tap'); refreshNow() }} disabled={!!busy || !!refreshing} title="Pede dados novos ao banco e importa o que estiver disponível" className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-medium text-accent-ink disabled:opacity-50">
               <RefreshCw className={cx('h-3.5 w-3.5', refreshing && 'animate-spin')} /> Atualizar agora
             </button>
             <button onClick={syncNow} disabled={!!busy || !!refreshing} title="Só reimporta o que a Pluggy já tem" className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium hover:bg-surface-2 disabled:opacity-50">
