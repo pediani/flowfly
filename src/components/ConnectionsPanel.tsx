@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { Send, UserPlus, Check, X, Copy, RefreshCw } from 'lucide-react'
 import { play } from '../lib/sounds'
 import BanksCard from './BanksCard'
+import AiUsageCard from './AiUsageCard'
 
 const BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || 'flowly_financeirobot'
 
@@ -106,6 +107,7 @@ export default function ConnectionsPanel({ onPartnersChange, onBankSynced }: { o
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <BanksCard onSynced={onBankSynced} />
+      <AiUsageCard />
       {/* TELEGRAM */}
       <div className={card}>
         <div className="p-6 border-b border-line">

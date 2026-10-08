@@ -227,3 +227,46 @@ export function parseNatural(text: string, today = todayBR()): ParsedEntry | nul
     categoryExplicit: false,
   }
 }
+
+// ---- Vários lançamentos na mesma mensagem ----
+
+/**
+ * "gastei 20 reais no mercado e 30 de uber" → 2 lançamentos.
+ * Divide por " e ", vírgula, ponto e vírgula ou quebra de linha, mas só quando cada parte tem um valor
+ * ("12 reais e 50 centavos" continua um lançamento só). Tipo e data passam para as partes seguintes.
+ */
+export function parseMany(text: string, today = todayBR()): ParsedEntry[] {
+  const clean = text.trim().replace(/\s+/g, ' ')
+  // protege "e N centavos" para não virar divisão
+  const guarded = clean.replace(/\be\s+(\d{1,2})\s+centavos/gi, '§$1 centavos')
+  const parts = guarded.split(/\s*(?:,\s+|;|\n|\s+e\s+|\s+mais\s+|\s+tamb[eé]m\s+)\s*/i).map((p) => p.replace(/§(\d{1,2}) centavos/g, 'e $1 centavos').trim()).filter(Boolean)
+  if (parts.length < 2) return []
+
+  // Junta partes sem número à anterior (ex.: "pão e leite 15" → não divide)
+  const chunks: string[] = []
+  for (const p of parts) {
+    if (/\d/.test(p) || !chunks.length) chunks.push(p)
+    else chunks[chunks.length - 1] += ` e ${p}`
+  }
+  if (chunks.length < 2 || chunks.some((c) => !/\d/.test(c))) return []
+
+  const parsed: { e: ParsedEntry; hasType: boolean; hasDate: boolean }[] = []
+  for (const c of chunks) {
+    const e = parseEntry(c, today) ?? parseNatural(c, today)
+    if (!e) return [] // se uma parte falhar, deixa a IA (ou o fluxo normal) decidir
+    const hasType = /^(s|e|saida|saída|entrada|gasto)\s|recebi|ganhei|entrou|caiu|salari|freela|reembolso|vendi|gastei|paguei|comprei/i.test(c)
+    parsed.push({ e, hasType, hasDate: e.date !== today || /\bhoje\b/i.test(c) })
+  }
+  // Uma única data citada vale para todos ("paguei 200 de luz e 90 de internet dia 5")
+  const dated = parsed.filter((p) => p.hasDate)
+  const sharedDate = dated.length === 1 ? dated[0].e.date : null
+
+  let prevType: EntryType | null = null
+  return parsed.map(({ e, hasType, hasDate }) => {
+    if (!hasType && prevType) { e.type = prevType; e.category = e.categoryExplicit ? e.category : detectCategory(e.description, prevType) }
+    if (!hasDate && sharedDate) e.date = sharedDate
+    if (e.type === 'entrada') e.installments = 1
+    prevType = e.type
+    return e
+  })
+}

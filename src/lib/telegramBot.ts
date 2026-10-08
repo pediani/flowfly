@@ -42,7 +42,7 @@ function budgetLine(txs: Tx[], budgets: Budget[], key: string, category: string)
 }
 
 export function savedMessage(
-  entry: ParsedEntry, nowIso: string, monthTxs: Tx[], budgets: Budget[], key: string
+  entry: ParsedEntry, nowIso: string, monthTxs: Tx[], budgets: Budget[], key: string, opts: { compact?: boolean; index?: string } = {}
 ): string {
   const cat = getCategory(entry.category)
   const isIn = entry.type === 'entrada'
@@ -61,6 +61,11 @@ export function savedMessage(
   if (parcel) {
     const parts = splitInstallments(entry.amount, entry.installments)
     lines.push(`💳 ${entry.installments}x de ${formatBRL(parts[1])} · última em ${formatDateBR(installmentDate(entry.date, entry.installments - 1))}`)
+  }
+  // Vários lançamentos na mesma mensagem: cada um sai enxuto e o resumo do mês vem no fim
+  if (opts.compact) {
+    if (opts.index) lines[0] = `${lines[0]} <i>(${opts.index})</i>`
+    return lines.join('\n')
   }
   lines.push('', monthBlock(monthTxs, key, `${monthLabel(key)} até agora`))
 
@@ -108,6 +113,10 @@ export function summaryMessage(
   if (s.aPagar > 0) lines.push('', `🤝 Pendente com parceiro: <b>${formatBRL(s.aPagar)}</b>`)
   if (!s.count) lines.push('', '<i>Nenhum lançamento neste mês ainda.</i>')
   return lines.join('\n')
+}
+
+export function multiSummaryMessage(count: number, monthTxs: Tx[], key: string): string {
+  return [`🧾 <b>${count} lançamentos registrados</b>`, '', monthBlock(monthTxs, key, `${monthLabel(key)} até agora`), '', '<i>Use os botões de cada um para ajustar ou desfazer.</i>'].join('\n')
 }
 
 export function lastEntriesMessage(txs: Tx[]): string {

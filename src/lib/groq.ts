@@ -1,66 +1,132 @@
-// Groq (plano gratuito): transcrição de áudio (Whisper) e interpretação de frases livres (Llama).
-// Só roda no servidor. Requer GROQ_API_KEY.
+// Groq (plano gratuito): transcrição de áudio (Whisper) e interpretação de frases livres.
+// Só roda no servidor. Requer GROQ_API_KEY. Cada chamada é registrada em ai_usage.
 import { CATEGORY_NAMES } from './categories'
 import { resolveDateToken, type ParsedEntry } from './parseEntry'
 import { todayBR } from './dates'
+import { logAiUsage, rateLimitHeaders } from './aiUsage'
+import { adminDb } from './botData'
 
 const API = 'https://api.groq.com/openai/v1'
 const KEY = () => process.env.GROQ_API_KEY || ''
+// llama-3.3-70b-versatile foi desligado pela Groq em 16/08/2026; o substituto recomendado é o gpt-oss-120b
+export const CHAT_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b'
+export const AUDIO_MODEL = process.env.GROQ_AUDIO_MODEL || 'whisper-large-v3-turbo'
 
 export function groqEnabled(): boolean {
   return !!KEY()
 }
 
-export async function transcribe(audio: Blob, filename = 'voice.ogg'): Promise<string | null> {
+export async function transcribe(audio: Blob, ctx: { userId?: string; seconds?: number } = {}, filename = 'voice.ogg'): Promise<string | null> {
   const form = new FormData()
   form.append('file', audio, filename)
-  form.append('model', 'whisper-large-v3-turbo')
+  form.append('model', AUDIO_MODEL)
   form.append('language', 'pt')
-  form.append('response_format', 'json')
-  const res = await fetch(`${API}/audio/transcriptions`, { method: 'POST', headers: { Authorization: `Bearer ${KEY()}` }, body: form })
-  if (!res.ok) { console.error('Groq transcrição falhou:', res.status, await res.text()); return null }
-  const data = await res.json()
-  return typeof data.text === 'string' ? data.text.trim() : null
-}
-
-/** Extrai um lançamento de uma frase livre: "gastei trinta reais no uber ontem". */
-export async function interpret(text: string, today = todayBR()): Promise<ParsedEntry | null> {
-  const system = [
-    'Você extrai lançamentos financeiros de mensagens em português do Brasil.',
-    `Hoje é ${today}. Responda SOMENTE um JSON com as chaves:`,
-    '{"ok": boolean, "type": "saida"|"entrada", "description": string curta (2-4 palavras, sem valor nem data), "amount": number em reais,',
-    ` "category": uma de [${CATEGORY_NAMES.join(', ')}], "date": "YYYY-MM-DD", "installments": inteiro (1 se à vista)}`,
-    'Números por extenso viram dígitos ("trinta e cinco e noventa" = 35.90). "recebi", "ganhei", "salário" = entrada; "gastei", "paguei", "comprei" = saída.',
-    'Se não for um lançamento financeiro, responda {"ok": false}.',
-  ].join('\n')
-
-  const res = await fetch(`${API}/chat/completions`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${KEY()}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      temperature: 0,
-      response_format: { type: 'json_object' },
-      messages: [{ role: 'system', content: system }, { role: 'user', content: text.slice(0, 500) }],
-    }),
-  })
-  if (!res.ok) { console.error('Groq interpretação falhou:', res.status, await res.text()); return null }
-
+  form.append('response_format', 'verbose_json')
+  const t0 = Date.now()
+  let res: Response
   try {
-    const data = await res.json()
-    const content = data.choices?.[0]?.message?.content || '{}'
-    const j = JSON.parse(content)
-    // O modelo às vezes omite "ok": só descarta se disser explicitamente que não é lançamento
-    if (j.ok === false) { console.log('Groq: não é lançamento:', text); return null }
-    const amount = Math.round(Number(j.amount) * 100) / 100
-    if (!Number.isFinite(amount) || amount <= 0 || !j.description) { console.log('Groq: resposta incompleta:', content); return null }
-    const type = j.type === 'entrada' ? 'entrada' : 'saida'
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(j.date) && j.date <= today ? j.date : (resolveDateToken(String(j.date || ''), today) ?? today)
-    const category = CATEGORY_NAMES.includes(j.category) ? j.category : type === 'entrada' ? 'Renda' : 'Geral'
-    const installments = type === 'saida' ? Math.min(48, Math.max(1, Math.round(Number(j.installments) || 1))) : 1
-    return { type, description: String(j.description).slice(0, 200), amount, category, categoryExplicit: false, date, installments }
+    res = await fetch(`${API}/audio/transcriptions`, { method: 'POST', headers: { Authorization: `Bearer ${KEY()}` }, body: form })
   } catch (e) {
-    console.error('Groq resposta inválida:', e)
+    await logAiUsage(adminDb, { user_id: ctx.userId, provider: 'groq', kind: 'audio', model: AUDIO_MODEL, purpose: 'áudio', status: 'erro', latency_ms: Date.now() - t0, error: String(e) })
     return null
   }
+  const latency = Date.now() - t0
+  const limits = rateLimitHeaders(res.headers)
+  const reqId = res.headers.get('x-request-id')
+  if (!res.ok) {
+    const err = await res.text()
+    console.error('Groq transcrição falhou:', res.status, err)
+    await logAiUsage(adminDb, { user_id: ctx.userId, provider: 'groq', kind: 'audio', model: AUDIO_MODEL, purpose: 'áudio', status: 'erro', http_status: res.status, latency_ms: latency, audio_seconds: ctx.seconds ?? null, ratelimit: limits, request_id: reqId, error: err.slice(0, 500) })
+    return null
+  }
+  const data = await res.json()
+  const text = typeof data.text === 'string' ? data.text.trim() : null
+  await logAiUsage(adminDb, {
+    user_id: ctx.userId, provider: 'groq', kind: 'audio', model: AUDIO_MODEL, purpose: 'áudio',
+    status: text ? 'ok' : 'sem resultado', http_status: res.status, latency_ms: latency,
+    audio_seconds: Number(data.duration ?? ctx.seconds ?? 0) || null,
+    request_id: data.x_groq?.id || reqId, ratelimit: limits, input_chars: text?.length ?? null,
+  })
+  return text
+}
+
+type RawItem = { type?: string; description?: string; amount?: number | string; category?: string; date?: string; installments?: number }
+
+/** Extrai um ou mais lançamentos de uma frase livre: "gastei 20 no mercado e 30 de uber ontem". */
+export async function interpretMany(text: string, ctx: { userId?: string; purpose?: string } = {}, today = todayBR()): Promise<ParsedEntry[]> {
+  const system = [
+    'Você extrai lançamentos financeiros de mensagens em português do Brasil. Uma mensagem pode ter VÁRIOS lançamentos.',
+    `Hoje é ${today}. Responda SOMENTE um JSON no formato {"items": [ ... ]}, onde cada item tem:`,
+    '{"type": "saida"|"entrada", "description": string curta (2-4 palavras, sem valor nem data), "amount": number em reais,',
+    ` "category": uma de [${CATEGORY_NAMES.join(', ')}], "date": "YYYY-MM-DD", "installments": inteiro (1 se à vista)}`,
+    'Números por extenso viram dígitos ("trinta e cinco e noventa" = 35.90). "recebi", "ganhei", "salário" = entrada; "gastei", "paguei", "comprei" = saída.',
+    'Se um item não disser o tipo ou a data, use os do item anterior. Se não houver lançamento, responda {"items": []}.',
+  ].join('\n')
+
+  const t0 = Date.now()
+  let res: Response
+  try {
+    res = await fetch(`${API}/chat/completions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${KEY()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: CHAT_MODEL,
+        temperature: 0,
+        reasoning_effort: 'low',
+        max_completion_tokens: 1200,
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'system', content: system }, { role: 'user', content: text.slice(0, 800) }],
+      }),
+    })
+  } catch (e) {
+    await logAiUsage(adminDb, { user_id: ctx.userId, provider: 'groq', kind: 'chat', model: CHAT_MODEL, purpose: ctx.purpose, status: 'erro', latency_ms: Date.now() - t0, input_chars: text.length, error: String(e) })
+    return []
+  }
+  const latency = Date.now() - t0
+  const limits = rateLimitHeaders(res.headers)
+  if (!res.ok) {
+    const err = await res.text()
+    console.error('Groq interpretação falhou:', res.status, err)
+    await logAiUsage(adminDb, { user_id: ctx.userId, provider: 'groq', kind: 'chat', model: CHAT_MODEL, purpose: ctx.purpose, status: 'erro', http_status: res.status, latency_ms: latency, input_chars: text.length, ratelimit: limits, request_id: res.headers.get('x-request-id'), error: err.slice(0, 500) })
+    return []
+  }
+
+  const data = await res.json()
+  const u = data.usage || {}
+  const entries: ParsedEntry[] = []
+  let parseError: string | null = null
+  try {
+    const j = JSON.parse(data.choices?.[0]?.message?.content || '{}')
+    const items: RawItem[] = Array.isArray(j.items) ? j.items : j.amount ? [j] : []
+    let lastType: 'entrada' | 'saida' = 'saida'
+    let lastDate = today
+    for (const it of items) {
+      const amount = Math.round(Number(it.amount) * 100) / 100
+      if (!Number.isFinite(amount) || amount <= 0 || !it.description) continue
+      const type: 'entrada' | 'saida' = it.type === 'entrada' ? 'entrada' : it.type === 'saida' ? 'saida' : lastType
+      const rawDate = String(it.date || '')
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) && rawDate <= today ? rawDate : (resolveDateToken(rawDate, today) ?? lastDate)
+      const category = CATEGORY_NAMES.includes(String(it.category)) ? String(it.category) : type === 'entrada' ? 'Renda' : 'Geral'
+      const installments = type === 'saida' ? Math.min(48, Math.max(1, Math.round(Number(it.installments) || 1))) : 1
+      entries.push({ type, description: String(it.description).slice(0, 200), amount, category, categoryExplicit: false, date, installments })
+      lastType = type
+      lastDate = date
+    }
+  } catch (e) {
+    parseError = `JSON inválido: ${String(e)}`
+    console.error('Groq resposta inválida:', e)
+  }
+
+  await logAiUsage(adminDb, {
+    user_id: ctx.userId, provider: 'groq', kind: 'chat', model: data.model || CHAT_MODEL, purpose: ctx.purpose,
+    status: parseError ? 'erro' : entries.length ? 'ok' : 'sem resultado',
+    http_status: res.status, latency_ms: latency,
+    prompt_tokens: u.prompt_tokens ?? null, completion_tokens: u.completion_tokens ?? null, total_tokens: u.total_tokens ?? null,
+    cached_tokens: u.prompt_tokens_details?.cached_tokens ?? null, reasoning_tokens: u.completion_tokens_details?.reasoning_tokens ?? null,
+    queue_time_ms: u.queue_time != null ? Math.round(u.queue_time * 1000) : null,
+    server_time_ms: u.total_time != null ? Math.round(u.total_time * 1000) : null,
+    result_count: entries.length, input_chars: text.length,
+    request_id: data.x_groq?.id || data.id || null, ratelimit: limits, error: parseError,
+  })
+  return entries
 }

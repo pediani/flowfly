@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server'
 import { CATEGORIES, detectCategory } from '../../../lib/categories'
 import { addDays, addMonths, currentMonthKey, monthKeyOf, todayBR } from '../../../lib/dates'
 import { pendingRecurring } from '../../../lib/finance'
-import { groqEnabled, interpret, transcribe } from '../../../lib/groq'
-import { parseEntry, parseNatural, type ParsedEntry } from '../../../lib/parseEntry'
+import { groqEnabled, interpretMany, transcribe } from '../../../lib/groq'
+import { logAiUsage } from '../../../lib/aiUsage'
+import { parseEntry, parseMany, parseNatural, type ParsedEntry } from '../../../lib/parseEntry'
 import {
   INVALID_FORMAT, categoryKeyboard, entryKeyboard, escapeHtml, helpMessage, lastEntriesMessage,
-  savedMessage, summaryMessage, undoMessage, weeklyMessage,
+  multiSummaryMessage, savedMessage, summaryMessage, undoMessage, weeklyMessage,
 } from '../../../lib/telegramBot'
 import { answerCallback, downloadFile, editKeyboard, editMessage, sendMessage, sendTyping } from '../../../lib/telegramApi'
 import {
@@ -86,16 +87,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true })
     }
 
-    let entry = parseEntry(text) ?? parseNatural(text)
-    if (!entry && groqEnabled()) {
-      await sendTyping(chatId)
-      entry = await interpret(text)
-    }
-    if (!entry) {
+    const entries = await understand(db, chatId, userId, text, 'texto')
+    if (!entries.length) {
       await sendMessage(chatId, INVALID_FORMAT)
       return NextResponse.json({ ok: true })
     }
-    await registerAndReply(db, chatId, userId, entry)
+    await registerEntries(db, chatId, userId, entries)
   } catch (error) {
     console.error('Erro interno no webhook:', error)
   }
@@ -116,6 +113,41 @@ async function renderEntry(db: Db, userId: string, entry: ParsedEntry, createdAt
   const key = currentMonthKey()
   const [monthTxs, budgets] = await Promise.all([fetchTxs(db, userId, key), fetchBudgets(db, userId)])
   return savedMessage(entry, createdAt, monthTxs, budgets, key)
+}
+
+/** Texto → lançamentos: primeiro sem IA (rápido e grátis); se não der, Groq. Tudo fica registrado em ai_usage. */
+async function understand(db: Db, chatId: number, userId: string, text: string, origin: 'texto' | 'áudio'): Promise<ParsedEntry[]> {
+  const many = parseMany(text)
+  const single = many.length ? null : parseEntry(text) ?? parseNatural(text)
+  const local = many.length ? many : single ? [single] : []
+  if (local.length) {
+    await logAiUsage(db, { user_id: userId, provider: 'local', kind: 'local', purpose: origin, status: 'ok', result_count: local.length, input_chars: text.length })
+    return local
+  }
+  if (!groqEnabled()) return []
+  await sendTyping(chatId)
+  return interpretMany(text, { userId, purpose: origin === 'áudio' ? 'áudio (interpretação)' : 'texto livre' })
+}
+
+async function registerEntries(db: Db, chatId: number, userId: string, entries: ParsedEntry[]) {
+  if (entries.length === 1) return registerAndReply(db, chatId, userId, entries[0])
+  const partner = await findPartner(db, userId)
+  let saved = 0
+  for (const [i, entry] of entries.entries()) {
+    const { row, error } = await insertEntry(db, userId, entry, 'telegram')
+    if (error || !row) {
+      console.error('Erro ao salvar transação:', error)
+      await sendMessage(chatId, `❌ Não consegui guardar “${escapeHtml(entry.description)}”.`)
+      continue
+    }
+    saved++
+    await sendMessage(chatId, savedMessage(entry, row.created_at || new Date().toISOString(), [], [], currentMonthKey(), { compact: true, index: `${i + 1}/${entries.length}` }),
+      entryKeyboard(row.id, { canSplit: !!partner, isIn: entry.type === 'entrada' }))
+  }
+  if (saved) {
+    const key = currentMonthKey()
+    await sendMessage(chatId, multiSummaryMessage(saved, await fetchTxs(db, userId, key), key))
+  }
 }
 
 async function registerAndReply(db: Db, chatId: number, userId: string, entry: ParsedEntry) {
@@ -155,18 +187,18 @@ async function handleVoice(db: Db, chatId: number, userId: string, file: { file_
   }
   await sendTyping(chatId)
   const blob = await downloadFile(file.file_id)
-  const heard = blob ? await transcribe(blob) : null
+  const heard = blob ? await transcribe(blob, { userId, seconds: file.duration }) : null
   if (!heard) {
     await sendMessage(chatId, '🎙️ Não consegui entender o áudio. Tente de novo ou envie por texto.')
     return
   }
-  const entry = parseEntry(heard) ?? parseNatural(heard) ?? await interpret(heard)
-  if (!entry) {
+  const entries = await understand(db, chatId, userId, heard, 'áudio')
+  if (!entries.length) {
     await sendMessage(chatId, `🎙️ Ouvi: “${escapeHtml(heard)}”\n\nMas não consegui identificar o lançamento. Tente falar o valor e o que foi, ex.: “uber 30 reais”.`)
     return
   }
   await sendMessage(chatId, `🎙️ <i>“${escapeHtml(heard)}”</i>`)
-  await registerAndReply(db, chatId, userId, entry)
+  await registerEntries(db, chatId, userId, entries)
 }
 
 async function handleSummary(db: Db, chatId: number, userId: string) {
