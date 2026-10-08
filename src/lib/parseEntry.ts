@@ -11,6 +11,19 @@ export type ParsedEntry = {
   date: string
   /** Número de parcelas (1 = à vista) */
   installments: number
+  /** Tags de evento: "@viagem-rio" → ["viagem-rio"] */
+  tags?: string[]
+}
+
+/** Separa as tags "@evento" do texto: "uber 30 @viagem-rio" → { text: "uber 30", tags: ["viagem-rio"] } */
+export function extractTags(text: string): { text: string; tags: string[] } {
+  const tags: string[] = []
+  const clean = text.replace(/(^|\s)@([\p{L}\p{N}_-]{2,40})/gu, (_m, sp: string, tag: string) => {
+    const t = tag.toLowerCase()
+    if (!tags.includes(t)) tags.push(t)
+    return sp
+  }).replace(/\s{2,}/g, ' ').trim()
+  return { text: clean, tags }
 }
 
 const PREFIXES: Record<string, EntryType> = {

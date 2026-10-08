@@ -54,6 +54,7 @@ export async function insertEntry(db: Db, userId: string, e: ParsedEntry, source
   if (e.installments <= 1) {
     const { data, error } = await db.from('transactions').insert({
       user_id: userId, amount: e.amount, description: e.description, type: e.type, category: e.category, date: e.date, source,
+      ...(e.tags?.length ? { tags: e.tags } : {}),
     }).select(TX_COLS).single()
     return { row: data as TxRow | null, error }
   }
@@ -64,6 +65,7 @@ export async function insertEntry(db: Db, userId: string, e: ParsedEntry, source
     description: `${e.description} (${k + 1}/${e.installments})`,
     date: installmentDate(e.date, k),
     installment_group: group, installment_no: k + 1, installment_total: e.installments,
+    ...(e.tags?.length ? { tags: e.tags } : {}),
   }))
   const { data, error } = await db.from('transactions').insert(rows).select(TX_COLS).order('installment_no')
   return { row: ((data || []) as TxRow[])[0] ?? null, error }

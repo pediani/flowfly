@@ -2,18 +2,18 @@ import { NextResponse } from 'next/server'
 import { CATEGORIES, detectCategory } from '../../../lib/categories'
 import { addDays, addMonths, currentMonthKey, daysInMonth, monthKeyOf, todayBR } from '../../../lib/dates'
 import { pendingRecurring } from '../../../lib/finance'
-import { groqEnabled, interpretMany, transcribe } from '../../../lib/groq'
-import { logAiUsage } from '../../../lib/aiUsage'
-import { normalizeSpokenAmounts, parseEntry, parseMany, parseNatural, type ParsedEntry } from '../../../lib/parseEntry'
+import { groqEnabled, readReceipt, transcribe } from '../../../lib/groq'
+import { extractTags, type ParsedEntry } from '../../../lib/parseEntry'
+import { saveEntries, understandText, type Origin } from '../../../lib/entryPipeline'
 import {
   INVALID_FORMAT, categoryKeyboard, entryKeyboard, escapeHtml, helpMessage, lastEntriesMessage,
-  canBuyMessage, multiSummaryMessage, savedMessage, summaryMessage, todayMessage, undoMessage, weeklyMessage,
+  canBuyMessage, savedMessage, summaryMessage, todayMessage, undoMessage, weeklyMessage,
 } from '../../../lib/telegramBot'
 import { getBankBalances } from '../../../lib/balances'
 import { cardsForPurchase, computeSafeToSpend, purchaseEvents } from '../../../lib/safeToSpend'
 import { answerCallback, downloadFile, editKeyboard, editMessage, sendMessage, sendTyping } from '../../../lib/telegramApi'
 import {
-  TX_COLS, adminDb, entryFromRows, fetchBudgets, fetchRecurring, fetchTxs, fetchTxsBetween, findPartner, insertEntry, rowsOf,
+  TX_COLS, adminDb, entryFromRows, fetchBudgets, fetchRecurring, fetchTxs, fetchTxsBetween, findPartner, rowsOf,
   type Db, type TxRow,
 } from '../../../lib/botData'
 import { bankEntryMessage, bankKeyboard } from '../../../lib/bankSync'
@@ -49,7 +49,8 @@ export async function POST(request: Request) {
     }
 
     const message = body.message || body.edited_message
-    if (!message || message.chat?.type !== 'private' || (!message.text && !message.voice && !message.audio)) {
+    const image = message?.photo?.length ? message.photo[message.photo.length - 1] : message?.document?.mime_type?.startsWith('image/') ? message.document : null
+    if (!message || message.chat?.type !== 'private' || (!message.text && !message.voice && !message.audio && !image)) {
       return NextResponse.json({ ok: true })
     }
 
@@ -70,6 +71,12 @@ export async function POST(request: Request) {
     }
     if (!userId) {
       await sendMessage(chatId, '👋 <b>Bem-vindo ao FlowFly!</b>\n\nPara começar, abra o painel, vá na aba <b>Conexões</b> e toque em <b>Conectar Telegram</b>.')
+      return NextResponse.json({ ok: true })
+    }
+
+    // Foto de comprovante → lançamento
+    if (image) {
+      await handlePhoto(db, chatId, userId, image, message.document?.mime_type || 'image/jpeg', message.caption || '')
       return NextResponse.json({ ok: true })
     }
 
@@ -119,54 +126,12 @@ async function renderEntry(db: Db, userId: string, entry: ParsedEntry, createdAt
   return savedMessage(entry, createdAt, monthTxs, budgets, key)
 }
 
-/** Texto → lançamentos: primeiro sem IA (rápido e grátis); se não der, Groq. Tudo fica registrado em ai_usage. */
-async function understand(db: Db, chatId: number, userId: string, text: string, origin: 'texto' | 'áudio'): Promise<ParsedEntry[]> {
-  text = normalizeSpokenAmounts(text)
-  const many = parseMany(text)
-  const single = many.length ? null : parseEntry(text) ?? parseNatural(text)
-  const local = many.length ? many : single ? [single] : []
-  if (local.length) {
-    await logAiUsage(db, { user_id: userId, provider: 'local', kind: 'local', purpose: origin, status: 'ok', result_count: local.length, input_chars: text.length })
-    return local
-  }
-  if (!groqEnabled()) return []
-  await sendTyping(chatId)
-  return interpretMany(text, { userId, purpose: origin === 'áudio' ? 'áudio (interpretação)' : 'texto livre' })
+async function understand(db: Db, chatId: number, userId: string, text: string, origin: Origin): Promise<ParsedEntry[]> {
+  return understandText(db, userId, text, origin, () => sendTyping(chatId))
 }
 
 async function registerEntries(db: Db, chatId: number, userId: string, entries: ParsedEntry[]) {
-  if (entries.length === 1) return registerAndReply(db, chatId, userId, entries[0])
-  const partner = await findPartner(db, userId)
-  let saved = 0
-  for (const [i, entry] of entries.entries()) {
-    const { row, error } = await insertEntry(db, userId, entry, 'telegram')
-    if (error || !row) {
-      console.error('Erro ao salvar transação:', error)
-      await sendMessage(chatId, `❌ Não consegui guardar “${escapeHtml(entry.description)}”.`)
-      continue
-    }
-    saved++
-    await sendMessage(chatId, savedMessage(entry, row.created_at || new Date().toISOString(), [], [], currentMonthKey(), { compact: true, index: `${i + 1}/${entries.length}` }),
-      entryKeyboard(row.id, { canSplit: !!partner, isIn: entry.type === 'entrada' }))
-  }
-  if (saved) {
-    const key = currentMonthKey()
-    await sendMessage(chatId, multiSummaryMessage(saved, await fetchTxs(db, userId, key), key))
-  }
-}
-
-async function registerAndReply(db: Db, chatId: number, userId: string, entry: ParsedEntry) {
-  const { row, error } = await insertEntry(db, userId, entry, 'telegram')
-  if (error || !row) {
-    console.error('Erro ao salvar transação:', error)
-    await sendMessage(chatId, '❌ Erro ao guardar o lançamento no banco de dados.')
-    return
-  }
-  const [text, partner] = await Promise.all([
-    renderEntry(db, userId, entry, row.created_at || new Date().toISOString()),
-    findPartner(db, userId),
-  ])
-  await sendMessage(chatId, text, entryKeyboard(row.id, { canSplit: !!partner, isIn: entry.type === 'entrada' }))
+  await saveEntries(db, userId, entries, chatId, 'telegram')
 }
 
 async function handleLink(db: Db, chatId: number, code: string) {
@@ -179,6 +144,23 @@ async function handleLink(db: Db, chatId: number, code: string) {
   } else {
     await sendMessage(chatId, `✅ <b>Conta vinculada!</b>\n\n${helpMessage(groqEnabled())}`)
   }
+}
+
+async function handlePhoto(db: Db, chatId: number, userId: string, file: { file_id: string; file_size?: number }, mime: string, caption: string) {
+  if (!groqEnabled()) { await sendMessage(chatId, '📷 Leitura de fotos ainda não está ativada.'); return }
+  if ((file.file_size || 0) > 3_500_000) { await sendMessage(chatId, '📷 Imagem muito grande. Mande como foto (não como arquivo) ou recorte o comprovante.'); return }
+  await sendTyping(chatId)
+  const blob = await downloadFile(file.file_id)
+  // a legenda pode trazer tags ou ajustes ("@viagem", "#lazer")
+  const { tags } = extractTags(caption)
+  const entries = blob ? await readReceipt(blob, mime, { userId, caption }) : []
+  if (!entries.length) {
+    await sendMessage(chatId, '📷 Não consegui ler um valor nessa imagem. Tente uma foto mais nítida do comprovante, ou mande por texto: <code>s mercado 45,90</code>')
+    return
+  }
+  if (tags.length) for (const e of entries) e.tags = tags
+  await sendMessage(chatId, '📷 <i>Li o comprovante:</i>')
+  await saveEntries(db, userId, entries, chatId, 'telegram')
 }
 
 async function handleVoice(db: Db, chatId: number, userId: string, file: { file_id: string; duration?: number }) {

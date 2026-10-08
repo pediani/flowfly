@@ -40,6 +40,7 @@ function Form({ onClose, userId, partners, onSaved, editing }: Props) {
   const [categoryTouched, setCategoryTouched] = useState(!!editing)
   const [date, setDate] = useState(editing?.date || todayBR())
   const [installments, setInstallments] = useState(1)
+  const [tagsText, setTagsText] = useState((editing?.tags || []).map((t) => `@${t}`).join(' '))
   const [split, setSplit] = useState(false)
   const [partnerId, setPartnerId] = useState('')
   const [saving, setSaving] = useState(false)
@@ -70,11 +71,13 @@ function Form({ onClose, userId, partners, onSaved, editing }: Props) {
     setSaving(true)
     setError(null)
     const desc = description.trim()
+    const tags = [...new Set(tagsText.split(/[\s,]+/).map((t) => t.replace(/^@/, '').toLowerCase().trim()).filter((t) => t.length >= 2))]
+    const tagField = tags.length || editing?.tags?.length ? { tags: tags.length ? tags : null } : {}
     let err: { message: string } | null = null
 
     if (editing) {
       ({ error: err } = await supabase.from('transactions')
-        .update({ amount: value, description: desc, type, category, date })
+        .update({ amount: value, description: desc, type, category, date, ...tagField })
         .eq('id', editing.id))
     } else if (doSplit) {
       ({ error: err } = await supabase.rpc('create_split_transaction', {
@@ -86,11 +89,11 @@ function Form({ onClose, userId, partners, onSaved, editing }: Props) {
       ;({ error: err } = await supabase.from('transactions').insert(parts.map((amt, k) => ({
         user_id: userId, amount: amt, type, category, source: 'web', is_split: false,
         description: `${desc} (${k + 1}/${installments})`, date: installmentDate(date, k),
-        installment_group: group, installment_no: k + 1, installment_total: installments,
+        installment_group: group, installment_no: k + 1, installment_total: installments, ...tagField,
       }))))
     } else {
       ({ error: err } = await supabase.from('transactions').insert({
-        user_id: userId, amount: value, description: desc, type, category, is_split: false, date, source: 'web',
+        user_id: userId, amount: value, description: desc, type, category, is_split: false, date, source: 'web', ...tagField,
       }))
     }
     setSaving(false)
@@ -145,6 +148,8 @@ function Form({ onClose, userId, partners, onSaved, editing }: Props) {
           </label>
         )}
       </div>
+
+      <input value={tagsText} onChange={(e) => setTagsText(e.target.value)} placeholder="Evento (opcional): @viagem-rio @casamento" className={inputClass} />
 
       <div>
         <p className="mb-2 text-xs text-muted">Categoria {!categoryTouched && description && <span className="text-accent">· sugerida automaticamente</span>}</p>

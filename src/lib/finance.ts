@@ -15,6 +15,7 @@ export type Tx = {
   is_split?: boolean | null
   created_at?: string | null
   source?: string | null
+  tags?: string[] | null
 }
 
 export type Recurring = {

@@ -42,6 +42,7 @@ export function TransactionItem({ t, onDelete, onPay, onEdit, delay = 0 }: {
               <Landmark className="h-2.5 w-2.5" /> conferido
             </span>
           )}
+          {(t.tags || []).map((tag) => <span key={tag} className="rounded-md bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info">@{tag}</span>)}
           {t.is_split && <span className="rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">dividido</span>}
           {t.date > todayBR() && <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted">agendado {formatDateBR(t.date).slice(0, 5)}</span>}
           {pending && <span className="rounded-md bg-warn/10 px-1.5 py-0.5 text-[10px] font-medium text-warn">pendente</span>}

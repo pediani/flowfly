@@ -48,22 +48,35 @@ export default function TransactionsList({ txs, monthKey, onDelete, onPay, onEdi
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [allMonths, setAllMonths] = useState(false)
+  const [tag, setTag] = useState<string | null>(null)
 
   const groups = useMemo(() => {
     const q = normalize(query)
     const list = txs.filter((t) =>
       (allMonths || t.date.startsWith(monthKey)) &&
       (filter === 'all' || (filter === 'telegram' || filter === 'bank' ? t.source === filter : t.type === filter)) &&
-      (!q || normalize(`${t.description} ${t.category || ''}`).includes(q)))
+      (!tag || (t.tags || []).includes(tag)) &&
+      (!q || normalize(`${t.description} ${t.category || ''} ${(t.tags || []).join(' ')}`).includes(q)))
     const map = new Map<string, Tx[]>()
     for (const t of list) map.set(t.date, [...(map.get(t.date) || []), t])
     return [...map.entries()].map(([date, items]) => ({
       date, items,
       net: items.reduce((a, t) => a + (t.type === 'entrada' ? Number(t.amount) : t.type === 'saida' ? -Number(t.amount) : 0), 0),
     }))
-  }, [txs, monthKey, query, filter, allMonths])
+  }, [txs, monthKey, query, filter, allMonths, tag])
 
   const count = groups.reduce((a, g) => a + g.items.length, 0)
+  const events = useMemo(() => {
+    const m = new Map<string, { out: number; inc: number; n: number; from: string; to: string }>()
+    for (const t of txs) for (const tg of t.tags || []) {
+      const e = m.get(tg) || { out: 0, inc: 0, n: 0, from: t.date, to: t.date }
+      if (t.type === 'saida' || t.type === 'a_pagar') e.out += Number(t.amount)
+      if (t.type === 'entrada') e.inc += Number(t.amount)
+      e.n++; if (t.date < e.from) e.from = t.date; if (t.date > e.to) e.to = t.date
+      m.set(tg, e)
+    }
+    return [...m.entries()].sort((a, b) => b[1].to.localeCompare(a[1].to))
+  }, [txs])
 
   const switcher = (
     <div className="inline-flex rounded-xl bg-surface-2 p-1">
@@ -87,6 +100,22 @@ export default function TransactionsList({ txs, monthKey, onDelete, onPay, onEdi
   return (
     <div className="space-y-4">
       {switcher}
+      {events.length > 0 && (
+        <Card className="p-4">
+          <p className="mb-2 text-xs font-medium text-muted">Eventos (@tags) — toque para filtrar</p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {events.map(([name, e]) => (
+              <button key={name} onClick={() => { play('tap'); setTag(tag === name ? null : name); setAllMonths(true) }}
+                className={cx('rounded-xl border p-3 text-left transition', tag === name ? 'border-accent bg-accent/10' : 'border-line hover:bg-surface-2')}>
+                <p className="text-sm font-medium text-info">@{name}</p>
+                <p className="mt-1 tabular text-sm font-semibold">{formatBRL(e.out)}<span className="text-xs font-normal text-muted"> gastos{e.inc ? ` · +${formatBRL(e.inc)}` : ''}</span></p>
+                <p className="text-[11px] text-muted">{e.n} lançamento(s) · {formatDateBR(e.from).slice(0, 5)}{e.to !== e.from ? `–${formatDateBR(e.to).slice(0, 5)}` : ''}</p>
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
+
       <Card className="p-4 space-y-3">
         <div className="relative">
           <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />

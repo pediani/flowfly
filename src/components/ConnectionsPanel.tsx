@@ -6,6 +6,7 @@ import { Send, UserPlus, Check, X, Copy, RefreshCw } from 'lucide-react'
 import { play } from '../lib/sounds'
 import BanksCard from './BanksCard'
 import AiUsageCard from './AiUsageCard'
+import ShortcutCard from './ShortcutCard'
 
 const BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || 'flowly_financeirobot'
 
@@ -107,6 +108,7 @@ export default function ConnectionsPanel({ onPartnersChange, onBankSynced }: { o
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <BanksCard onSynced={onBankSynced} />
+      <ShortcutCard />
       <AiUsageCard />
       {/* TELEGRAM */}
       <div className={card}>

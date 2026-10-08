@@ -11,6 +11,8 @@ const KEY = () => process.env.GROQ_API_KEY || ''
 // llama-3.3-70b-versatile foi desligado pela Groq em 16/08/2026; o substituto recomendado é o gpt-oss-120b
 export const CHAT_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b'
 export const AUDIO_MODEL = process.env.GROQ_AUDIO_MODEL || 'whisper-large-v3-turbo'
+// Modelo multimodal (lê imagens) disponível no plano gratuito da Groq
+export const VISION_MODEL = process.env.GROQ_VISION_MODEL || 'qwen/qwen3.8-27b'
 
 export function groqEnabled(): boolean {
   return !!KEY()
@@ -127,6 +129,72 @@ export async function interpretMany(text: string, ctx: { userId?: string; purpos
     server_time_ms: u.total_time != null ? Math.round(u.total_time * 1000) : null,
     result_count: entries.length, input_chars: text.length,
     request_id: data.x_groq?.id || data.id || null, ratelimit: limits, error: parseError,
+  })
+  return entries
+}
+
+/** Lê a foto de um comprovante / nota / Pix e devolve o(s) lançamento(s). */
+export async function readReceipt(image: Blob, mime: string, ctx: { userId?: string; caption?: string } = {}, today = todayBR()): Promise<ParsedEntry[]> {
+  const b64 = Buffer.from(await image.arrayBuffer()).toString('base64')
+  const system = [
+    'Você lê fotos de comprovantes (Pix, transferência, cartão), notas fiscais e cupons em português do Brasil.',
+    `Hoje é ${today}. Responda SOMENTE um JSON {"items": [ ... ]} com UM item pelo valor TOTAL pago (não liste os produtos), com:`,
+    '{"type": "saida"|"entrada", "description": nome do estabelecimento ou do destinatário (2-4 palavras), "amount": number em reais,',
+    ` "category": uma de [${CATEGORY_NAMES.join(', ')}], "date": "YYYY-MM-DD" (data do comprovante), "installments": inteiro}`,
+    'Pix ou transferência RECEBIDA = entrada; paga/enviada = saída. Se não for um comprovante, responda {"items": []}.',
+  ].join('\n')
+  const body = (json: boolean) => JSON.stringify({
+    model: VISION_MODEL,
+    temperature: 0,
+    max_completion_tokens: 1500,
+    ...(json ? { response_format: { type: 'json_object' } } : {}),
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: [
+        { type: 'text', text: ctx.caption ? `Legenda do usuário: ${ctx.caption.slice(0, 300)}` : 'Extraia o lançamento desta imagem.' },
+        { type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } },
+      ] },
+    ],
+  })
+
+  const t0 = Date.now()
+  let res = await fetch(`${API}/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${KEY()}`, 'Content-Type': 'application/json' }, body: body(true) })
+  // alguns modelos não aceitam modo JSON com imagem: tenta de novo sem
+  if (res.status === 400) res = await fetch(`${API}/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${KEY()}`, 'Content-Type': 'application/json' }, body: body(false) })
+  const latency = Date.now() - t0
+  const limits = rateLimitHeaders(res.headers)
+  if (!res.ok) {
+    const err = await res.text()
+    console.error('Groq visão falhou:', res.status, err)
+    await logAiUsage(adminDb, { user_id: ctx.userId, provider: 'groq', kind: 'chat', model: VISION_MODEL, purpose: 'foto', status: 'erro', http_status: res.status, latency_ms: latency, ratelimit: limits, error: err.slice(0, 500) })
+    return []
+  }
+  const data = await res.json()
+  const u = data.usage || {}
+  const content: string = data.choices?.[0]?.message?.content || '{}'
+  const jsonText = (content.match(/\{[\s\S]*\}/g) || ['{}']).pop()!
+  const entries: ParsedEntry[] = []
+  try {
+    const j = JSON.parse(jsonText)
+    for (const it of (Array.isArray(j.items) ? j.items : j.amount ? [j] : []) as RawItem[]) {
+      const amount = Math.round(Number(String(it.amount).replace(',', '.')) * 100) / 100
+      if (!Number.isFinite(amount) || amount <= 0) continue
+      const type = it.type === 'entrada' ? 'entrada' : 'saida'
+      const rawDate = String(it.date || '')
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) && rawDate <= today ? rawDate : today
+      entries.push({
+        type, amount, date, description: String(it.description || 'Comprovante').slice(0, 200), categoryExplicit: false,
+        category: CATEGORY_NAMES.includes(String(it.category)) ? String(it.category) : type === 'entrada' ? 'Renda' : 'Geral',
+        installments: type === 'saida' ? Math.min(48, Math.max(1, Math.round(Number(it.installments) || 1))) : 1,
+      })
+    }
+  } catch (e) { console.error('Groq visão: JSON inválido', e, content.slice(0, 300)) }
+  await logAiUsage(adminDb, {
+    user_id: ctx.userId, provider: 'groq', kind: 'chat', model: data.model || VISION_MODEL, purpose: 'foto',
+    status: entries.length ? 'ok' : 'sem resultado', http_status: res.status, latency_ms: latency,
+    prompt_tokens: u.prompt_tokens ?? null, completion_tokens: u.completion_tokens ?? null, total_tokens: u.total_tokens ?? null,
+    queue_time_ms: u.queue_time != null ? Math.round(u.queue_time * 1000) : null, server_time_ms: u.total_time != null ? Math.round(u.total_time * 1000) : null,
+    result_count: entries.length, request_id: data.x_groq?.id || data.id || null, ratelimit: limits,
   })
   return entries
 }
