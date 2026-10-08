@@ -76,7 +76,7 @@ function Body({ card }: { card: BankBalance }) {
           <p className="font-medium">O que está na fatura aberta</p>
           <p className="text-xs text-muted">{items.length} {items.length === 1 ? 'item' : 'itens'}</p>
         </div>
-        <p className="mb-1.5 text-[11px] text-muted">Compras do ciclo atual e as parcelas que o banco prevê para esta fatura. Se faltar ou sobrar algo, me avise com o nome da compra.</p>
+        <p className="mb-1.5 text-[11px] text-muted">Calculado {card.billMethod || 'pela previsão do banco'}. Se faltar ou sobrar algo, me avise com o nome da compra.</p>
         {items.length ? (
           <ul className="max-h-80 divide-y divide-line overflow-y-auto rounded-xl border border-line">
             {items.map((t, i) => (
