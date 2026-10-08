@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Check, CreditCard, ExternalLink, Landmark, Pencil, RefreshCw, Trash2, Wallet } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { relativeTimeBR } from '../lib/dates'
+import { formatDateTimeBR, relativeTimeBR } from '../lib/dates'
 import { play } from '../lib/sounds'
 import { EmptyState, cx } from './ui'
 
@@ -33,13 +33,16 @@ export default function BanksCard({ onSynced }: { onSynced: () => void }) {
   const [renaming, setRenaming] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
   const [diag, setDiag] = useState<string | null>(null)
+  const [itemStatus, setItemStatus] = useState<Record<string, { status: string; lastUpdatedAt?: string | null; nextAutoSyncAt?: string | null; error?: string | null }>>({})
+  const [refreshing, setRefreshing] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('bank_connections').select('id, item_id, institution, last_sync_at, status').order('created_at')
     setConns((data as Conn[]) || [])
     if (data?.length) {
-      const { ok, json } = await authed('/api/pluggy/accounts')
-      if (ok) setAccounts(json)
+      const [acc, st] = await Promise.all([authed('/api/pluggy/accounts'), authed('/api/pluggy/status')])
+      if (acc.ok) setAccounts(acc.json)
+      if (st.ok) setItemStatus(st.json.items || {})
     }
   }, [])
 
@@ -70,6 +73,32 @@ export default function BanksCard({ onSynced }: { onSynced: () => void }) {
     load(); onSynced()
   }
 
+  /** Pede ao banco dados novos e acompanha até terminar (máx. ~3 min), depois importa. */
+  async function refreshNow() {
+    setRefreshing('Pedindo atualização aos bancos…'); setMsg(null)
+    const { ok, json } = await authed('/api/pluggy/refresh')
+    if (!ok) { setRefreshing(null); play('error'); setMsg({ ok: false, text: json.error || 'Falha ao pedir atualização.' }); return }
+    const failed = (json.results || []).filter((r: { ok: boolean }) => !r.ok)
+    for (let i = 0; i < 36; i++) {
+      await new Promise((r) => setTimeout(r, 5000))
+      const st = await authed('/api/pluggy/status')
+      const items = (st.json.items || {}) as typeof itemStatus
+      setItemStatus(items)
+      const updating = Object.values(items).filter((x) => x.status === 'UPDATING').length
+      setRefreshing(updating ? `Atualizando ${updating} banco(s)… ${(i + 1) * 5}s` : 'Importando lançamentos…')
+      if (!updating) break
+    }
+    const sync = await authed('/api/pluggy/sync')
+    setRefreshing(null)
+    play(sync.json.imported ? 'income' : 'success')
+    setMsg({
+      ok: !failed.length,
+      text: `Atualizado: ${sync.json.imported ?? 0} novo(s), ${sync.json.matched ?? 0} juntado(s).` +
+        (failed.length ? ` Não atualizou: ${failed.map((f: { institution: string; error: string }) => `${f.institution} (${f.error})`).join('; ')}.` : ''),
+    })
+    load(); onSynced()
+  }
+
   async function rename(c: Conn) {
     const { ok, json } = await authed('/api/pluggy/rename', { connectionId: c.id, name: newName })
     play(ok ? 'success' : 'error')
@@ -92,9 +121,14 @@ export default function BanksCard({ onSynced }: { onSynced: () => void }) {
           <p className="mt-1 text-xs text-muted">Importa entradas e saídas dos seus bancos todo dia, sem duplicar o que você já lançou.</p>
         </div>
         {conns.length > 0 && (
-          <button onClick={syncNow} disabled={!!busy} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium hover:bg-surface-2 disabled:opacity-50">
-            <RefreshCw className={cx('h-3.5 w-3.5', busy === 'sync' && 'animate-spin')} /> Sincronizar
-          </button>
+          <div className="flex shrink-0 gap-1.5">
+            <button onClick={() => { play('tap'); refreshNow() }} disabled={!!busy || !!refreshing} title="Pede dados novos ao banco (até 1 vez por hora)" className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-medium text-accent-ink disabled:opacity-50">
+              <RefreshCw className={cx('h-3.5 w-3.5', refreshing && 'animate-spin')} /> Atualizar agora
+            </button>
+            <button onClick={syncNow} disabled={!!busy || !!refreshing} title="Só reimporta o que a Pluggy já tem" className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium hover:bg-surface-2 disabled:opacity-50">
+              <RefreshCw className={cx('h-3.5 w-3.5', busy === 'sync' && 'animate-spin')} /> Importar
+            </button>
+          </div>
         )}
       </div>
 
@@ -118,7 +152,13 @@ export default function BanksCard({ onSynced }: { onSynced: () => void }) {
                         <button onClick={() => { play('tap'); setRenaming(c.id); setNewName(/meu\s?pluggy/i.test(c.institution || '') ? '' : c.institution || '') }} title="Renomear" className="rounded p-0.5 text-muted hover:text-ink"><Pencil className="h-3 w-3" /></button>
                       </p>
                     )}
-                    <p className="text-xs text-muted">{c.last_sync_at ? `Sincronizado ${relativeTimeBR(c.last_sync_at)}` : 'Aguardando primeira sincronização'}{c.status && c.status !== 'UPDATED' ? ` · ${c.status}` : ''}</p>
+                    <p className="text-xs text-muted">
+                      {itemStatus[c.id]?.status === 'UPDATING' ? <span className="text-accent">Atualizando com o banco…</span>
+                        : itemStatus[c.id]?.lastUpdatedAt ? `Dados do banco de ${relativeTimeBR(itemStatus[c.id].lastUpdatedAt!)}`
+                        : c.last_sync_at ? `Importado ${relativeTimeBR(c.last_sync_at)}` : 'Aguardando primeira sincronização'}
+                      {itemStatus[c.id]?.nextAutoSyncAt ? ` · próxima automática ${formatDateTimeBR(itemStatus[c.id].nextAutoSyncAt!)}` : ''}
+                      {itemStatus[c.id]?.status && !['UPDATED', 'UPDATING'].includes(itemStatus[c.id].status) ? <span className="text-expense"> · {itemStatus[c.id].status}{itemStatus[c.id].error ? `: ${itemStatus[c.id].error}` : ''}</span> : null}
+                    </p>
                   </div>
                   <button onClick={() => remove(c)} title="Desconectar" className="rounded-lg p-1.5 text-muted hover:bg-surface-2 hover:text-expense"><Trash2 className="h-4 w-4" /></button>
                 </div>
@@ -144,6 +184,7 @@ export default function BanksCard({ onSynced }: { onSynced: () => void }) {
             {busy === 'connect' ? 'Conectando…' : 'Conectar'}
           </button>
         </form>
+        {refreshing && <p className="text-xs text-accent">{refreshing}</p>}
         {msg && <p className={cx('text-xs', msg.ok ? 'text-income' : 'text-expense')}>{msg.text}</p>}
 
         <div className="flex flex-wrap gap-3">

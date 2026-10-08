@@ -30,7 +30,19 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export type PluggyItem = { id: string; status: string; executionStatus?: string; lastUpdatedAt?: string; connector?: { name?: string } }
+export type PluggyItem = {
+  id: string
+  status: string                 // UPDATED | UPDATING | LOGIN_ERROR | OUTDATED | WAITING_USER_INPUT
+  executionStatus?: string
+  lastUpdatedAt?: string | null  // última sincronização com a instituição
+  nextAutoSyncAt?: string | null
+  consentExpiresAt?: string | null
+  error?: { code?: string; message?: string } | null
+  connector?: { name?: string }
+}
+
+/** Dispara uma nova sincronização do item (para contas novas a Pluggy limita a 1 por hora via API). */
+export const updateItem = (id: string) => call<PluggyItem>(`/items/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({}) })
 export type PluggyAccount = {
   id: string
   type: 'BANK' | 'CREDIT' | string
@@ -114,8 +126,10 @@ export async function listBills(accountId: string): Promise<PluggyBill[]> {
 export async function ensureWebhook(url: string, secret: string) {
   const r = await call<{ results?: { url: string; event: string }[] } | { url: string; event: string }[]>('/webhooks')
   const list = Array.isArray(r) ? r : r.results || []
-  if (list.some((w) => w.url === url && (w.event === 'transactions/created' || w.event === 'all'))) return
-  await call('/webhooks', { method: 'POST', body: JSON.stringify({ url, event: 'transactions/created', headers: { 'x-flowfly-secret': secret } }) })
+  for (const event of ['transactions/created', 'item/updated']) {
+    if (list.some((w) => w.url === url && (w.event === event || w.event === 'all'))) continue
+    await call('/webhooks', { method: 'POST', body: JSON.stringify({ url, event, headers: { 'x-flowfly-secret': secret } }) })
+  }
 }
 
 /** Saldo exibido no painel (conta: saldo disponível · cartão: fatura atual) */
