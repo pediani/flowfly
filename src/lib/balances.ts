@@ -4,7 +4,7 @@ import { listAccounts, listBills, listTransactions, type BankBalance, type Plugg
 import { computeBill } from './cardBill'
 import { addDays, todayBR } from './dates'
 
-export type BalanceDiag = { name: string; txs: PluggyTx[]; bills: PluggyBill[]; bill: ReturnType<typeof computeBill> }
+export type BalanceDiag = { id: string; name: string; txs: PluggyTx[]; bills: PluggyBill[]; bill: ReturnType<typeof computeBill>; byBank: ReturnType<typeof computeBill>; credit: unknown }
 
 export async function getBankBalances(db: Db, userId: string, opts: { debug?: boolean } = {}): Promise<{ accounts: BankBalance[]; errors: string[]; diag: BalanceDiag[] }> {
   const debug = !!opts.debug
@@ -28,7 +28,7 @@ export async function getBankBalances(db: Db, userId: string, opts: { debug?: bo
             listBills(a.id).catch(() => []),
           ])
           bill = computeBill(txs, bills, a.creditData?.balanceCloseDate, a.creditData?.balanceDueDate, todayBR(), daysOf.get(a.id) || {})
-          if (debug) diag.push({ name: a.marketingName || a.name || a.id, txs, bills, bill })
+          if (debug) diag.push({ id: a.id, name: a.marketingName || a.name || a.id, txs, bills, bill, byBank: computeBill(txs, bills, a.creditData?.balanceCloseDate, a.creditData?.balanceDueDate, todayBR()), credit: { ...a.creditData, balance: a.balance } })
         }
         accounts.push({
           id: a.id,

@@ -27,6 +27,18 @@ function Body({ card }: { card: BankBalance }) {
   const [msg, setMsg] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const items = card.items || []
+  const [copied, setCopied] = useState<string | null>(null)
+
+  async function copyDiag() {
+    setCopied('Gerando…')
+    const { data: s } = await supabase.auth.getSession()
+    const res = await fetch('/api/pluggy/balances?debug=1', { method: 'POST', headers: { Authorization: `Bearer ${s.session?.access_token || ''}` } })
+    const json = await res.json().catch(() => null)
+    const mine = (json?.diag || []).find((d: { id: string }) => d.id === card.id)
+    const text = JSON.stringify({ card: `${card.institution} ·${card.last4}`, ...mine })
+    try { await navigator.clipboard.writeText(text); setCopied('Copiado! Cole no chat com o Claude.') }
+    catch { setCopied(text) }
+  }
 
   async function save() {
     if (!card.id) return
@@ -58,7 +70,7 @@ function Body({ card }: { card: BankBalance }) {
 
       <div className="rounded-xl border border-line p-3">
         <p className="font-medium">Datas do cartão</p>
-        <p className="mt-0.5 text-[11px] text-muted">Se o banco informar errado, defina aqui. Vale para o painel e para o bot.</p>
+        <p className="mt-0.5 text-[11px] text-muted">Se o banco informar errado, defina aqui (deixe em branco para usar o do banco). Atenção: <b>fechamento</b> é o dia em que a fatura fecha, geralmente ~7 dias antes do vencimento.</p>
         <div className="mt-2 flex flex-wrap items-end gap-2">
           <label className="text-xs text-muted">Fecha dia
             <input inputMode="numeric" value={closeDay} onChange={(e) => setCloseDay(e.target.value.replace(/\D/g, '').slice(0, 2))} placeholder={card.openCloses ? card.openCloses.slice(8, 10) : '—'} className="mt-1 block h-9 w-20 rounded-lg border border-line bg-surface px-2 text-sm text-ink" />
@@ -89,6 +101,12 @@ function Body({ card }: { card: BankBalance }) {
             ))}
           </ul>
         ) : <p className="text-xs text-muted">Nenhuma compra encontrada no ciclo atual.</p>}
+      </div>
+
+      <div className="rounded-xl border border-dashed border-line p-3">
+        <p className="text-[11px] text-muted">O valor não bate com o app do banco? Copie o diagnóstico (lista do que o banco enviou) e cole no chat.</p>
+        <button type="button" onClick={copyDiag} className="mt-2 h-8 rounded-lg border border-line px-3 text-xs font-medium">Copiar diagnóstico</button>
+        {copied && <p className="mt-2 max-h-32 overflow-auto break-all text-[11px] text-muted">{copied}</p>}
       </div>
     </div>
   )
