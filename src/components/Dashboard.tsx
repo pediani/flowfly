@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase'
 import { addDays, addMonths, currentMonthKey, daysInMonth, formatDateBR, monthLabel, todayBR } from '../lib/dates'
 import { buildCashFlow } from '../lib/cashflow'
 import { computeSafeToSpend } from '../lib/safeToSpend'
+import { byPaymentMonth, isCardTx } from '../lib/paymentDate'
 import type { FuturePoint } from '../lib/finance'
 import { detectAnomalies, detectSubscriptions } from '../lib/analysis'
 import { formatBRL } from '../lib/format'
@@ -51,10 +52,20 @@ type Props = {
   onSettled: () => void
 }
 
+const VIEW_KEY = 'flowfly:gastosPor'
+const readView = (): 'pagamento' | 'compra' => { try { return localStorage.getItem(VIEW_KEY) === 'compra' ? 'compra' : 'pagamento' } catch { return 'pagamento' } }
+
 export default function Dashboard(p: Props) {
-  const { txs, recurring, installments, budgets, monthKey } = p
+  const { recurring, installments, budgets, monthKey } = p
+  const allTxs = p.txs
   const today = todayBR()
   const isCurrent = monthKey === currentMonthKey()
+  const accounts = useBankBalances(p.settlementKey)
+  const hasCardTxs = useMemo(() => allTxs.some(isCardTx), [allTxs])
+  const [view, setView] = useState<'pagamento' | 'compra'>(readView)
+  const changeView = (v: 'pagamento' | 'compra') => { play('tap'); setView(v); try { localStorage.setItem(VIEW_KEY, v) } catch {} }
+  // Visão dos gastos: compras no cartão no mês em que a fatura é paga (padrão) ou na data da compra
+  const txs = useMemo(() => (hasCardTxs && view === 'pagamento' ? byPaymentMonth(allTxs, accounts) : allTxs), [allTxs, accounts, view, hasCardTxs])
 
   const data = useMemo(() => {
     const s = summarize(txs, monthKey)
@@ -73,22 +84,26 @@ export default function Dashboard(p: Props) {
       history: monthlyHistory(txs, 13).filter((m) => m.key !== monthKey).slice(0, 6),
       overall: overallBalance(txs),
       debts: pendingDebts(txs),
-      recent: txs.filter((t) => t.date.startsWith(monthKey) && t.date <= today).slice(0, 6),
+      recent: allTxs.filter((t) => t.date.startsWith(monthKey) && t.date <= today).slice(0, 6),
+      split: (() => {
+        const out = txs.filter((t) => t.date.startsWith(monthKey) && t.type === 'saida')
+        const card = out.filter(isCardTx).reduce((a, t) => a + Number(t.amount), 0)
+        return { card: Math.round(card * 100) / 100, cash: Math.round((out.reduce((a, t) => a + Number(t.amount), 0) - card) * 100) / 100 }
+      })(),
     }
-  }, [txs, recurring, installments, budgets, monthKey, today])
+  }, [txs, allTxs, recurring, installments, budgets, monthKey, today])
 
   const { s, prev, mp } = data
   const [section, setSection] = useState<'resumo' | 'gastos' | 'futuro' | 'patrimonio'>('resumo')
-  const accounts = useBankBalances(p.settlementKey)
   const hasBank = !!accounts?.some((a) => a.type === 'Conta')
 
   // Com banco conectado, toda previsão sai da mesma conta: saldo real + lançado depois + entradas − saídas (faturas, fixas, agendados)
   const bank = useMemo(() => {
     if (!isCurrent || !accounts?.some((a) => a.type === 'Conta')) return null
     const eom = `${monthKey}-${daysInMonth(monthKey)}`
-    const unsynced = computeSafeToSpend(accounts, recurring, txs, { today })?.unsynced ?? 0
+    const unsynced = computeSafeToSpend(accounts, recurring, allTxs, { today })?.unsynced ?? 0
     const lastKey = addMonths(monthKey, 5)
-    const flow = buildCashFlow(accounts, recurring, txs, `${lastKey}-${daysInMonth(lastKey)}`, today, { startOffset: unsynced })
+    const flow = buildCashFlow(accounts, recurring, allTxs, `${lastKey}-${daysInMonth(lastKey)}`, today, { startOffset: unsynced })
     const atEom = flow.series.find((x) => x.date === eom)?.saldo ?? flow.start
     const lowMonth = flow.series.filter((x) => x.date <= eom).reduce((m, x) => (x.saldo < m.saldo ? x : m), { date: today, saldo: flow.start, label: '' })
     // Próximos meses pela mesma conta
@@ -103,7 +118,7 @@ export default function Dashboard(p: Props) {
     }
     const futureInst = accounts.filter((a) => a.type === 'Cartão').reduce((a, c) => a + Math.max(0, Number(c.usedLimit ?? 0) - Number(c.balance ?? 0)), 0)
     return { eom, atEom, lowMonth, future, futureInst }
-  }, [isCurrent, accounts, recurring, txs, today, monthKey])
+  }, [isCurrent, accounts, recurring, allTxs, today, monthKey])
 
   // Avisos coerentes com o saldo do banco (os de projeção pelos lançamentos saem)
   const insights = useMemo(() => {
@@ -121,7 +136,7 @@ export default function Dashboard(p: Props) {
       {/* TOPO: o que mais importa (no PC, em duas colunas) */}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          {isCurrent && hasBank ? <RealBalanceCard txs={txs} recurring={recurring} refreshKey={p.settlementKey} /> : (
+          {isCurrent && hasBank ? <RealBalanceCard txs={allTxs} recurring={recurring} refreshKey={p.settlementKey} /> : (
             <>
       {/* RESULTADO DO MÊS */}
       <Card className="p-5 md:p-6">
@@ -148,7 +163,7 @@ export default function Dashboard(p: Props) {
           )}
         </div>
         <div className="hidden space-y-4 lg:block">
-          {isCurrent && <UpcomingCard txs={txs} recurring={recurring} refreshKey={p.settlementKey} />}
+          {isCurrent && <UpcomingCard txs={allTxs} recurring={recurring} refreshKey={p.settlementKey} />}
           {insights.length > 0 && <AlertsColumn items={insights} />}
         </div>
       </div>
@@ -165,6 +180,8 @@ export default function Dashboard(p: Props) {
         ))}
       </div>
 
+      {hasCardTxs && <ViewToggle view={view} onChange={changeView} />}
+
       <section className={cx('space-y-4', section !== 'resumo' && 'lg:hidden')}>
       {isCurrent && hasBank && (
         <>
@@ -172,7 +189,7 @@ export default function Dashboard(p: Props) {
       <Card className="p-5 md:p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="text-sm text-muted">Lançamentos de {monthLabel(monthKey)} <span className="text-xs">(entradas − saídas registradas no mês)</span></p>
+            <p className="text-sm text-muted">Lançamentos de {monthLabel(monthKey)} <span className="text-xs">(entradas − saídas{hasCardTxs ? (view === 'pagamento' ? ', cartão pelo mês da fatura' : ', cartão pela data da compra') : ''})</span></p>
             <Money value={s.saldo} className={cx('mt-1 block text-2xl font-semibold tracking-tight md:text-3xl', s.saldo < 0 && 'text-expense')} />
           </div>
           <div className="flex flex-wrap gap-2 text-xs">
@@ -194,7 +211,7 @@ export default function Dashboard(p: Props) {
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Kpi label="Entradas" value={s.entradas} icon={ArrowUpRight} color="text-income" delay={40} hint={bank ? 'Lançadas no mês (inclui as do banco)' : undefined} />
-        <Kpi label="Saídas" value={s.saidas} icon={ArrowDownRight} color="text-expense" delay={70} hint={bank ? 'Gastos do mês pela data da compra (cartão incluso)' : undefined} />
+        <Kpi label="Saídas" value={s.saidas} icon={ArrowDownRight} color="text-expense" delay={70} hint={hasCardTxs ? `Débito/Pix ${formatBRL(data.split.cash)} · Cartão ${formatBRL(data.split.card)}` : undefined} />
         <Kpi label="A receber" value={s.aReceber} icon={Handshake} color="text-accent" delay={100} hint="Metade das despesas que você dividiu" />
         <Kpi label="A pagar" value={data.debts} icon={Handshake} color="text-warn" delay={130} hint="Pendências com seu parceiro" />
       </div>
@@ -249,7 +266,7 @@ export default function Dashboard(p: Props) {
             title={`${monthLabel(monthKey)} dia a dia`}
             icon={<TrendingUp className="h-4 w-4 text-muted" />}
             subtitle={bank
-              ? <>Lançamentos acumulados no mês (compras no cartão contam na data da compra). O saldo real da conta está em <b className="text-ink">Quanto posso gastar → Dia a dia</b>.</>
+              ? <>Lançamentos acumulados no mês ({view === 'pagamento' ? 'compras no cartão contam no mês em que a fatura vence' : 'compras no cartão contam na data da compra'}). O saldo real da conta está em <b className="text-ink">Quanto posso gastar → Dia a dia</b>.</>
               : mp.isCurrent
               ? <>Projeção: lançado até hoje + contas fixas a vencer{mp.avgMonthlyVariable ? <> · gastos avulsos não são estimados (sua média: <b className="text-ink">{formatBRL(mp.avgMonthlyVariable)}/mês</b>)</> : null}</>
               : mp.isFuture ? 'Mês futuro: veja a projeção dos próximos meses.' : 'Saldo acumulado ao longo do mês.'}
@@ -264,7 +281,7 @@ export default function Dashboard(p: Props) {
           ) : <EmptyState icon={Receipt} title="Sem lançamentos neste mês" />}
         </Card>
 
-        <CategoryCard {...p} cats={data.cats} totalOut={s.saidas} />
+        <CategoryCard {...p} txs={txs} cats={data.cats} totalOut={s.saidas} />
       </div>
       </section>
       <section className={cx('space-y-4', section !== 'futuro' && 'lg:hidden')}>
@@ -282,7 +299,7 @@ export default function Dashboard(p: Props) {
       </Card>
       </section>
       <section className={cx('space-y-4', section !== 'patrimonio' && 'lg:hidden')}>
-      {isCurrent && <NetWorthCard refreshKey={p.settlementKey} txs={txs} recurring={recurring} />}
+      {isCurrent && <NetWorthCard refreshKey={p.settlementKey} txs={allTxs} recurring={recurring} />}
       {/* METAS + ACERTO */}
       <div className={cx('grid gap-4', p.partnerEmail && 'lg:grid-cols-2')}>
         <GoalsCard goals={p.goals} onChange={p.onGoalsChange} />
@@ -495,5 +512,18 @@ function CategoryCard({ userId, cats, totalOut, budgets, monthKey, onBudgetsChan
         })()}
       </Sheet>
     </Card>
+  )
+}
+
+function ViewToggle({ view, onChange }: { view: 'pagamento' | 'compra'; onChange: (v: 'pagamento' | 'compra') => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <span className="text-muted">Compras no cartão contam:</span>
+      <div className="inline-flex rounded-lg bg-surface-2 p-0.5">
+        {([['pagamento', 'no mês em que pago a fatura'], ['compra', 'na data da compra']] as const).map(([v, label]) => (
+          <button key={v} onClick={() => onChange(v)} className={cx('h-7 rounded-md px-2.5 font-medium transition', view === v ? 'bg-surface text-ink shadow-[var(--shadow)]' : 'text-muted hover:text-ink')}>{label}</button>
+        ))}
+      </div>
+    </div>
   )
 }

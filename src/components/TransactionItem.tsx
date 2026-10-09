@@ -1,6 +1,6 @@
 'use client'
 
-import { CheckCircle2, Landmark, Pencil, Send, Trash2 } from 'lucide-react'
+import { CheckCircle2, CreditCard, Landmark, Pencil, Send, Trash2 } from 'lucide-react'
 import { formatDateBR, relativeTimeBR, todayBR } from '../lib/dates'
 import { formatBRL } from '../lib/format'
 import type { Tx } from '../lib/finance'
@@ -16,7 +16,11 @@ export function TransactionItem({ t, onDelete, onPay, onEdit, delay = 0 }: {
 }) {
   const pending = t.type === 'a_pagar'
   const isIn = t.type === 'entrada'
-  const when = t.created_at ? relativeTimeBR(t.created_at) : formatDateBR(t.date)
+  // Do banco: a data da compra/transação (não a hora em que a Pluggy enviou)
+  const purchase = (t as Tx & { purchase_date?: string }).purchase_date
+  const when = t.source === 'bank' || !t.created_at ? formatDateBR(purchase || t.date) : relativeTimeBR(t.created_at)
+  const account = (t as Tx & { bank_account?: string }).bank_account || ''
+  const onCard = /Cart[aã]o/.test(account)
 
   return (
     <li className="group flex items-center gap-3 py-2.5 animate-fade-up" style={{ animationDelay: `${delay}ms` }}>
@@ -34,8 +38,8 @@ export function TransactionItem({ t, onDelete, onPay, onEdit, delay = 0 }: {
             </span>
           )}
           {t.source === 'bank' && (
-            <span title={(t as Tx & { bank_description?: string }).bank_description || ''} className="inline-flex items-center gap-1 rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">
-              <Landmark className="h-2.5 w-2.5" /> {(t as Tx & { bank_account?: string }).bank_account?.split(' · ')[0] || 'Banco'}
+            <span title={`${account}${(t as Tx & { bank_description?: string }).bank_description ? ` · ${(t as Tx & { bank_description?: string }).bank_description}` : ''}`} className={cx('inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium', onCard ? 'bg-expense/10 text-expense' : 'bg-accent/10 text-accent')}>
+              {onCard ? <CreditCard className="h-2.5 w-2.5" /> : <Landmark className="h-2.5 w-2.5" />} {onCard ? 'Cartão' : 'Conta'} {account.split(' · ')[0] || 'Banco'}
             </span>
           )}
           {(t as Tx & { external_id?: string }).external_id && t.source !== 'bank' && (
@@ -45,7 +49,8 @@ export function TransactionItem({ t, onDelete, onPay, onEdit, delay = 0 }: {
           )}
           {(t.tags || []).map((tag) => <span key={tag} className="rounded-md bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info">@{tag}</span>)}
           {t.is_split && <span className="rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">dividido</span>}
-          {t.date > todayBR() && <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted">agendado {formatDateBR(t.date).slice(0, 5)}</span>}
+          {purchase && <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted">paga na fatura de {formatDateBR(t.date).slice(0, 5)}</span>}
+          {!purchase && t.date > todayBR() && <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted">agendado {formatDateBR(t.date).slice(0, 5)}</span>}
           {pending && <span className="rounded-md bg-warn/10 px-1.5 py-0.5 text-[10px] font-medium text-warn">pendente</span>}
         </p>
       </div>

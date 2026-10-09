@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { isCardTx } from '../lib/paymentDate'
 import { Download, Search, SearchX } from 'lucide-react'
 import { normalize } from '../lib/categories'
 import { dayLabelBR, formatDateBR, formatTimeBR, monthLabel } from '../lib/dates'
@@ -11,7 +12,7 @@ import CalendarView from './CalendarView'
 import { TransactionItem } from './TransactionItem'
 import { Card, Chip, EmptyState, cx, inputClass } from './ui'
 
-type Filter = 'all' | 'entrada' | 'saida' | 'a_pagar' | 'telegram' | 'bank'
+type Filter = 'all' | 'entrada' | 'saida' | 'a_pagar' | 'telegram' | 'bank' | 'cartao' | 'debito'
 
 const TYPE_LABEL: Record<string, string> = { entrada: 'Entrada', saida: 'Saída', a_pagar: 'A pagar' }
 
@@ -54,7 +55,10 @@ export default function TransactionsList({ txs, monthKey, onDelete, onPay, onEdi
     const q = normalize(query)
     const list = txs.filter((t) =>
       (allMonths || t.date.startsWith(monthKey)) &&
-      (filter === 'all' || (filter === 'telegram' || filter === 'bank' ? t.source === filter : t.type === filter)) &&
+      (filter === 'all' ||
+        (filter === 'cartao' ? t.type === 'saida' && isCardTx(t)
+          : filter === 'debito' ? t.type === 'saida' && !isCardTx(t)
+          : filter === 'telegram' || filter === 'bank' ? t.source === filter : t.type === filter)) &&
       (!tag || (t.tags || []).includes(tag)) &&
       (!q || normalize(`${t.description} ${t.note || ''} ${t.category || ''} ${(t.tags || []).join(' ')}`).includes(q)))
     const map = new Map<string, Tx[]>()
@@ -128,6 +132,8 @@ export default function TransactionsList({ txs, monthKey, onDelete, onPay, onEdi
           <Chip active={filter === 'a_pagar'} onClick={() => setFilter('a_pagar')}>Pendentes</Chip>
           <Chip active={filter === 'telegram'} onClick={() => setFilter('telegram')}>Via Telegram</Chip>
           <Chip active={filter === 'bank'} onClick={() => setFilter('bank')}>Do banco</Chip>
+          <Chip active={filter === 'cartao'} onClick={() => setFilter('cartao')}>No cartão</Chip>
+          <Chip active={filter === 'debito'} onClick={() => setFilter('debito')}>Débito/Pix</Chip>
           <span className="mx-1 w-px shrink-0 bg-line" />
           <Chip active={!allMonths} onClick={() => setAllMonths(false)}>{monthLabel(monthKey)}</Chip>
           <Chip active={allMonths} onClick={() => setAllMonths(true)}>Todos os meses</Chip>

@@ -140,14 +140,15 @@ export async function syncConnection(db: Db, conn: BankConnection, opts: { initi
   // histórico (até 12 meses) no dia em que o banco é conectado, o filtro por createdAt traria tudo.
   const connectedOn = conn.created_at ? conn.created_at.slice(0, 10) : todayBR()
   const floor = addDays(connectedOn, -(opts.initialDays ?? 30))
-  const filter = conn.last_sync_at
-    ? { dateFrom: floor, createdAtFrom: new Date(Date.parse(conn.last_sync_at) - 2 * 86400000).toISOString() }
-    : { dateFrom: floor }
+  // Depois da 1ª sincronização: janela dos últimos 45 dias inteira. Assim dá para ver compras que saíram de
+  // "pendente" para "lançada" (o banco troca o id e corrige a data para a data real da compra).
+  const windowStart = conn.last_sync_at ? (addDays(todayBR(), -45) > floor ? addDays(todayBR(), -45) : floor) : floor
 
   const incoming: { t: PluggyTx; a: PluggyAccount }[] = []
-  for (const a of accounts) for (const t of await listTransactions(a.id, filter)) if (t.date.slice(0, 10) >= floor) incoming.push({ t, a })
+  for (const a of accounts) for (const t of await listTransactions(a.id, { dateFrom: windowStart })) if (t.date.slice(0, 10) >= floor) incoming.push({ t, a })
 
   const result: SyncResult = { imported: [], matched: 0, skipped: 0, institution }
+  if (conn.last_sync_at && incoming.length) await reconcile(db, conn.user_id, institution, accounts, incoming, windowStart)
   if (incoming.length) {
     // Já importados antes
     const ids = incoming.map(({ t }) => t.id)
@@ -199,6 +200,62 @@ export async function syncConnection(db: Db, conn: BankConnection, opts: { initi
 
   await db.from('bank_connections').update({ last_sync_at: new Date().toISOString(), institution, status: item.status }).eq('id', conn.id)
   return result
+}
+
+type BankRow = { id: string; external_id: string | null; date: string; type: string; amount: number; bank_description: string | null; bank_account: string | null; category: string | null; note?: string | null }
+
+const descKey = (s?: string | null) => normalize(s || '').replace(/[^a-z0-9]/g, '').slice(0, 10)
+
+/**
+ * Compras pendentes viram "lançadas" com outro id e a data real. Aqui o lançamento antigo é atualizado
+ * (mantendo sua categoria e observação) em vez de duplicar; datas alteradas pelo banco são corrigidas.
+ */
+export async function reconcile(db: Db, userId: string, institution: string | null, accounts: PluggyAccount[], incoming: { t: PluggyTx; a: PluggyAccount }[], windowStart: string) {
+  const labels = accounts.map((a) => accountLabel(institution, a))
+  const { data } = await db.from('transactions').select('id, external_id, date, type, amount, bank_description, bank_account, category, note')
+    .eq('user_id', userId).eq('source', 'bank').in('bank_account', labels).gte('date', addDays(windowStart, -10))
+  const rows = (data || []) as BankRow[]
+  const byExt = new Map(rows.filter((r) => r.external_id).map((r) => [r.external_id!, r]))
+  const ids = new Set(incoming.map(({ t }) => t.id))
+  const orphans = rows.filter((r) => r.external_id && !ids.has(r.external_id) && r.date >= windowStart && r.type !== 'ignorado')
+  const used = new Set<string>()
+  const same = (r: BankRow, t: PluggyTx, label: string) =>
+    r.bank_account === label && r.type === (t.type === 'CREDIT' ? 'entrada' : 'saida') &&
+    Math.abs(Number(r.amount) - Math.abs(Number(t.amount))) < 0.01 && dayDiff(r.date, t.date.slice(0, 10)) <= 10 &&
+    descKey(r.bank_description) === descKey(t.descriptionRaw || t.description)
+
+  for (const { t, a } of incoming) {
+    const date = t.date.slice(0, 10)
+    const label = accountLabel(institution, a)
+    const known = byExt.get(t.id)
+    if (known) {
+      if (known.date !== date) await db.from('transactions').update({ date }).eq('id', known.id)
+      continue
+    }
+    // id novo: é a versão "lançada" de uma compra que estava pendente?
+    const o = orphans.find((r) => !used.has(r.id) && same(r, t, label))
+    if (o) {
+      used.add(o.id)
+      await db.from('transactions').update({ external_id: t.id, date, bank_description: t.descriptionRaw || t.description }).eq('id', o.id)
+      byExt.set(t.id, { ...o, external_id: t.id, date })
+    }
+  }
+
+  // Pendentes que sumiram: se já existe a versão lançada (importada antes desta regra), fica só uma
+  for (const o of orphans.filter((r) => !used.has(r.id))) {
+    const survivor = [...byExt.values()].find((r) => r.id !== o.id && ids.has(r.external_id!) && r.bank_account === o.bank_account && r.type === o.type &&
+      Math.abs(Number(r.amount) - Number(o.amount)) < 0.01 && dayDiff(r.date, o.date) <= 10 && descKey(r.bank_description) === descKey(o.bank_description))
+    if (survivor) {
+      const patch: Record<string, unknown> = {}
+      if (o.note && !survivor.note) patch.note = o.note
+      if (o.category && o.category !== 'Geral' && (!survivor.category || survivor.category === 'Geral')) patch.category = o.category
+      if (Object.keys(patch).length) await db.from('transactions').update(patch).eq('id', survivor.id)
+      await db.from('transactions').update({ type: 'ignorado' }).eq('id', o.id)
+    } else if (o.date < addDays(todayBR(), -7)) {
+      // sumiu do banco há mais de uma semana sem substituto: compra pendente cancelada
+      await db.from('transactions').update({ type: 'ignorado' }).eq('id', o.id)
+    }
+  }
 }
 
 // ---- Telegram ----
