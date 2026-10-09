@@ -13,6 +13,46 @@ export type ParsedEntry = {
   installments: number
   /** Tags de evento: "@viagem-rio" → ["viagem-rio"] */
   tags?: string[]
+  /** Forma de pagamento citada: "cartão santander" → { method: 'cartao', hint: 'santander' } · "pix" → débito */
+  payment?: Payment
+  /** Rótulo do cartão escolhido (ex.: "Santander · Cartão 3947"), preenchido ao salvar */
+  bankAccount?: string | null
+}
+
+export type Payment = { method: 'cartao' | 'debito'; hint?: string | null }
+
+const PAY_STOP = /^(hoje|ontem|anteontem|dia|de|do|da|em|e|mais|tamb[eé]m|pra|para|por|que|foi|no|na|com|o|a|\d.*)$/i
+const CARD_WORD = String.raw`(?:cart[aã]o|cr[eé]dito)(?:\s+de\s+cr[eé]dito)?`
+
+/** Nome do cartão depois de "cartão": até 2 palavras que não sejam data/número ("cartão mercado pago ontem" → "mercado pago"). */
+function cardHint(after: string): string | null {
+  const words: string[] = []
+  for (const w of after.trim().split(/\s+/)) {
+    if (!w) continue
+    if (/^\d{4}$/.test(w) && !words.length) return w   // final do cartão
+    if (PAY_STOP.test(w.normalize('NFD').replace(/[̀-ͯ]/g, '')) || words.length >= 2) break
+    words.push(w)
+  }
+  return words.length ? words.join(' ').toLowerCase() : null
+}
+
+/** Tira a forma de pagamento de qualquer ponto do texto (frases livres, áudio, IA). */
+export function extractPayment(text: string): { text: string; payment: Payment | null } {
+  const card = text.match(new RegExp(String.raw`(?:^|\s)(?:(?:n[oa]|com\s+o|pelo|via)\s+)?${CARD_WORD}((?:\s+(?:d[oa]\s+)?(?:\p{L}+|\d{4}(?!\d|[.,]\d))){0,2})`, 'iu'))
+  if (card) {
+    const hint = cardHint((card[1] || '').replace(/^\s+(?:d[oa]\s+)/i, ' '))
+    let cut = card[0]
+    if (!hint && card[1]) cut = cut.slice(0, cut.length - card[1].length)          // palavras seguintes não eram o nome
+    else if (hint && card[1]) {                                                     // mantém o que vem depois do nome
+      const tail = card[1].trim().split(/\s+/)
+      const keep = tail.slice(hint.split(' ').length + (/^(d[oa])$/i.test(tail[0]) ? 1 : 0)).join(' ')
+      if (keep) cut = cut.slice(0, cut.length - keep.length - 1)
+    }
+    return { text: text.replace(cut, ' ').replace(/\s{2,}/g, ' ').trim(), payment: { method: 'cartao', hint } }
+  }
+  const deb = text.match(/(?:^|\s)(?:(?:n[oa]|via|pelo|no)\s+)?(pix|d[eé]bito|dinheiro)(?=\s|$)/i)
+  if (deb && !/^\s*(?:s|e)?\s*pix\s/i.test(text)) return { text: text.replace(deb[0], ' ').replace(/\s{2,}/g, ' ').trim(), payment: { method: 'debito' } }
+  return { text, payment: null }
 }
 
 /** Separa as tags "@evento" do texto: "uber 30 @viagem-rio" → { text: "uber 30", tags: ["viagem-rio"] } */
@@ -133,10 +173,18 @@ export function parseEntry(text: string, today = todayBR()): ParsedEntry | null 
     return sp
   }).trim()
 
-  // Modificadores no fim, em qualquer ordem: data e parcelas
+  // Modificadores no fim, em qualquer ordem: data, parcelas e forma de pagamento
   let date = today
   let installments = 1
-  for (let guard = 0; guard < 3; guard++) {
+  let payment: Payment | null = null
+  for (let guard = 0; guard < 4; guard++) {
+    const pay = !payment ? rest.match(new RegExp(String.raw`\s(?:(?:n[oa]|com\s+o|pelo|via)\s+)?${CARD_WORD}((?:\s+(?:d[oa]\s+)?\p{L}+){0,2})$`, 'iu')) : null
+    if (pay && !/^\s*\d+([.,]\d{1,2})?\s*$/.test(pay[1] || '')) {
+      const hint = cardHint((pay[1] || '').replace(/^\s+(?:d[oa]\s+)/i, ' '))
+      if (!pay[1] || hint) { payment = { method: 'cartao', hint }; rest = rest.slice(0, pay.index).trim(); continue }
+    }
+    const deb = !payment ? rest.match(/\s(?:(?:n[oa]|via|pelo)\s+)?(pix|d[eé]bito|dinheiro)$/i) : null
+    if (deb) { payment = { method: 'debito' }; rest = rest.slice(0, deb.index).trim(); continue }
     const inst = rest.match(/\s(?:em\s)?(\d{1,2})\s?x$/i)
     if (inst && Number(inst[1]) >= 2 && Number(inst[1]) <= 48) {
       installments = Number(inst[1]); rest = rest.slice(0, inst.index).trim(); continue
@@ -162,6 +210,7 @@ export function parseEntry(text: string, today = todayBR()): ParsedEntry | null 
     type, description: desc, amount, date, installments,
     category: explicit ?? detectCategory(desc, type),
     categoryExplicit: explicit !== null,
+    ...(payment && type === 'saida' ? { payment } : {}),
   }
 }
 

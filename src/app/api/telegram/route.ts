@@ -1,3 +1,4 @@
+import { GENERIC_CARD, cardShort, listUserCards } from '../../../lib/cards'
 import { NextResponse } from 'next/server'
 import { allCategories, detectCategory } from '../../../lib/categories'
 import { addDays, addMonths, currentMonthKey, daysInMonth, monthKeyOf, todayBR } from '../../../lib/dates'
@@ -7,7 +8,7 @@ import { detectSubscriptions, monthRecap, qaContext } from '../../../lib/analysi
 import { extractTags, type ParsedEntry } from '../../../lib/parseEntry'
 import { saveEntries, understandText, type Origin } from '../../../lib/entryPipeline'
 import {
-  INVALID_FORMAT, categoryKeyboard, entryKeyboard, escapeHtml, helpMessage, lastEntriesMessage,
+  INVALID_FORMAT, cardChoiceKeyboard, categoryKeyboard, entryKeyboard, escapeHtml, helpMessage, lastEntriesMessage,
   canBuyMessage, recapMessage, savedMessage, subscriptionsMessage, summaryMessage, todayMessage, undoMessage, weeklyMessage,
 } from '../../../lib/telegramBot'
 import { getBankBalances } from '../../../lib/balances'
@@ -308,7 +309,7 @@ async function handleCallback(db: Db, cq: CallbackQuery) {
   if (!userId) { await answerCallback(cq.id, 'Conta não vinculada'); return }
   await loadUserCategories(db, userId)
 
-  const [action, id, extra] = cq.data.split(':')
+  const [action, id, extra, origin] = cq.data.split(':')
 
   // Conta fixa paga (lembrete do cron)
   if (action === 'p') {
@@ -344,6 +345,31 @@ async function handleCallback(db: Db, cq: CallbackQuery) {
     : renderEntry(db, userId, entryFromRows(rows), row.created_at || new Date().toISOString())
 
   switch (action) {
+    case 'K': {
+      const cards = await listUserCards(db, userId)
+      await answerCallback(cq.id)
+      if (!cards.length) {
+        const rows = await rowsOf(db, row)
+        await db.from('transactions').update({ bank_account: GENERIC_CARD }).in('id', rows.map((r) => r.id))
+        await sendMessage(chatId, '💳 Marcado como cartão. Conecte o banco na aba Conexões para escolher qual e ver a fatura.')
+        return
+      }
+      await editKeyboard(chatId, messageId, cardChoiceKeyboard(row.id, cards, true))
+      return
+    }
+    case 'k': {
+      const cards = await listUserCards(db, userId)
+      const card = extra === 'x' ? null : cards[Number(extra)]
+      if (extra !== 'x' && !card) { await answerCallback(cq.id, 'Cartão não encontrado'); return }
+      const rows = await rowsOf(db, row)
+      await db.from('transactions').update({ bank_account: card ? card.label : null }).in('id', rows.map((r) => r.id))
+      await answerCallback(cq.id, card ? `💳 ${cardShort(card.label)}` : '💸 Débito/Pix')
+      await editKeyboard(chatId, messageId, origin === 'p' ? { inline_keyboard: [] } : kb)
+      await sendMessage(chatId, card
+        ? `💳 <b>${escapeHtml(entryFromRows(rows).description)}</b> no cartão <b>${escapeHtml(cardShort(card.label))}</b>. Conta na fatura dele.`
+        : `💸 <b>${escapeHtml(entryFromRows(rows).description)}</b> como débito/Pix.`)
+      return
+    }
     case 'c':
       await answerCallback(cq.id)
       await editKeyboard(chatId, messageId, categoryKeyboard(row.id))

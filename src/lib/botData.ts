@@ -11,10 +11,11 @@ const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 export const adminDb: SupabaseClient | null = URL_ && KEY ? createClient(URL_, KEY, { auth: { persistSession: false } }) : null
 export type Db = SupabaseClient
 
-export const TX_COLS = 'id, user_id, amount, type, description, category, date, is_split, created_at, source, installment_group, installment_no, installment_total, split_parent_id'
+export const TX_COLS = 'id, user_id, amount, type, description, category, date, is_split, created_at, source, installment_group, installment_no, installment_total, split_parent_id, bank_account'
 
 export type TxRow = Tx & {
   user_id: string
+  bank_account?: string | null
   installment_group?: string | null
   installment_no?: number | null
   installment_total?: number | null
@@ -56,6 +57,7 @@ export async function insertEntry(db: Db, userId: string, e: ParsedEntry, source
     const { data, error } = await db.from('transactions').insert({
       user_id: userId, amount: e.amount, description: e.description, type: e.type, category: e.category, date: e.date, source,
       ...(e.tags?.length ? { tags: e.tags } : {}),
+      ...(e.bankAccount ? { bank_account: e.bankAccount } : {}),
     }).select(TX_COLS).single()
     return { row: data as TxRow | null, error }
   }
@@ -67,6 +69,7 @@ export async function insertEntry(db: Db, userId: string, e: ParsedEntry, source
     date: installmentDate(e.date, k),
     installment_group: group, installment_no: k + 1, installment_total: e.installments,
     ...(e.tags?.length ? { tags: e.tags } : {}),
+    ...(e.bankAccount ? { bank_account: e.bankAccount } : {}),
   }))
   const { data, error } = await db.from('transactions').insert(rows).select(TX_COLS).order('installment_no')
   return { row: ((data || []) as TxRow[])[0] ?? null, error }

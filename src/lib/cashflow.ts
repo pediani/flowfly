@@ -59,7 +59,7 @@ export function buildCashFlow(
     if (t.date <= today || t.date > until) continue
     if (t.type !== 'entrada' && t.type !== 'saida') continue
     const bankAccount = (t as Tx & { bank_account?: string | null }).bank_account || ''
-    if (t.source === 'bank' && /Cart[aã]o/.test(bankAccount)) continue
+    if (/Cart[aã]o/.test(bankAccount)) continue   // no cartão: entra pela fatura
     events.push({ date: t.date, label: t.description, amount: (t.type === 'entrada' ? 1 : -1) * Number(t.amount), kind: 'agendado' })
   }
 

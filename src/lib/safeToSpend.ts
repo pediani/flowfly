@@ -4,6 +4,7 @@ import { addDays, addMonths, daysInMonth, monthKeyOf, todayBR } from './dates'
 import { buildCashFlow, type CashEvent, type CashFlow } from './cashflow'
 import type { Recurring, Tx } from './finance'
 import type { BankBalance } from './pluggy'
+import { isCardTx, paymentMapper } from './paymentDate'
 
 export type SafeToSpend = {
   available: number          // sobra prevista em `until`: banco + lançado + entradas − saídas − reserva
@@ -50,7 +51,9 @@ export function computeSafeToSpend(
   const bankDate = accounts.map((a) => a.updatedAt).filter(Boolean).sort().pop()?.slice(0, 10) ?? null
 
   // O que você lançou depois da última foto do banco (ainda não aparece no saldo dele)
+  const manual = (t: Tx) => (t.source === 'telegram' || t.source === 'web') && !(t as Tx & { external_id?: string | null }).external_id
   const pending = txs.filter((t) =>
+    !isCardTx(t) &&
     (t.source === 'telegram' || t.source === 'web') &&
     !(t as Tx & { external_id?: string | null }).external_id &&
     (t.type === 'saida' || t.type === 'entrada') &&
@@ -61,7 +64,13 @@ export function computeSafeToSpend(
   const next = addMonths(monthKeyOf(today), 1)
   const until = nextIncome ? addDays(nextIncome.date, -1) : `${next}-${daysInMonth(next)}`
 
-  const flow = buildCashFlow(accounts, recurring, txs, until, today, { startOffset: unsynced, extra: opts.extra })
+  // Compras no cartão lançadas por você que o banco ainda não mostra: entram na fatura em que caem
+  const payOf = paymentMapper(accounts)
+  const cardPending: CashEvent[] = txs
+    .filter((t) => manual(t) && isCardTx(t) && t.type === 'saida' && t.date <= today && (!bankDate || t.date >= addDays(bankDate, -3)))
+    .map((t) => ({ t, d: payOf(t).payDate }))
+    .map(({ t, d }) => ({ date: d < today ? today : d, label: `${t.description} (cartão, ainda fora do banco)`, amount: -Number(t.amount), kind: 'fatura' as const }))
+  const flow = buildCashFlow(accounts, recurring, txs, until, today, { startOffset: unsynced, extra: [...(opts.extra || []), ...cardPending] })
   const lowest = Math.min(flow.start, ...flow.series.map((p) => p.saldo))
   const safeNow = Math.round((lowest - reserve) * 100) / 100
   const available = Math.round((flow.end - reserve) * 100) / 100

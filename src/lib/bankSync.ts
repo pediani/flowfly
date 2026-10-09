@@ -162,7 +162,7 @@ export async function syncConnection(db: Db, conn: BankConnection, opts: { initi
     const dates = incoming.map(({ t }) => t.date.slice(0, 10)).sort()
     const { data: manual } = await db.from('transactions').select(TX_COLS + ', external_id')
       .eq('user_id', conn.user_id).is('external_id', null).in('source', ['web', 'telegram'])
-      .gte('date', addDays(dates[0], -3)).lte('date', addDays(dates[dates.length - 1], 3))
+      .gte('date', addDays(dates[0], -35)).lte('date', addDays(dates[dates.length - 1], 7))
     const candidates = ((manual || []) as unknown as (TxRow & { external_id: string | null })[])
     const used = new Set<string>()
 
@@ -175,7 +175,18 @@ export async function syncConnection(db: Db, conn: BankConnection, opts: { initi
       const date = t.date.slice(0, 10)
       const label = accountLabel(institution, a)
 
-      const match = candidates.find((c) => !used.has(c.id) && c.type === type && Math.abs(Number(c.amount) - amount) < 0.01 && dayDiff(c.date, date) <= 3)
+      // Lançado à mão no cartão: só junta com o mesmo cartão (ou "Cartão" sem nome); compra pendente pode vir com
+      // a data da atualização (até 7 dias) e parcelas futuras chegam no início do ciclo (até 35 dias)
+      const onCard = a.type === 'CREDIT'
+      const match = candidates.find((c) => {
+        if (used.has(c.id) || c.type !== type || Math.abs(Number(c.amount) - amount) >= 0.01) return false
+        const cAcc = c.bank_account || ''
+        const cCard = /Cart[aã]o/.test(cAcc)
+        if (cCard !== onCard && cAcc) return false
+        if (cCard && cAcc !== 'Cartão' && cAcc !== label && !cAcc.startsWith(`${institution} `)) return false
+        const max = cCard ? ((c.installment_no || 1) > 1 ? 35 : 7) : 3
+        return dayDiff(c.date, date) <= max
+      })
       if (match) {
         used.add(match.id)
         await db.from('transactions').update({ external_id: t.id, bank_description: t.descriptionRaw || t.description, bank_account: label }).eq('id', match.id)

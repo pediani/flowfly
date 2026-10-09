@@ -13,6 +13,7 @@ import type { Partnership } from './ConnectionsPanel'
 import { CategoryIcon } from './CategoryIcon'
 import { CategoryForm } from './CategoriesCard'
 import { Segmented, Sheet, cx, inputClass, primaryButton } from './ui'
+import { currentBalancesKey, useBankBalances } from './useBankBalances'
 
 type Props = {
   open: boolean
@@ -46,6 +47,12 @@ function Form({ onClose, userId, partners, onSaved, editing, onCategoriesChange 
   const [note, setNote] = useState(editing?.note || '')
   const [creatingCat, setCreatingCat] = useState(false)
   const fromBank = editing?.source === 'bank'
+  // Pago com: débito/Pix ou um dos cartões conectados (mesmo rótulo usado na importação do banco)
+  const accounts = useBankBalances(currentBalancesKey())
+  const cardOptions = (accounts || []).filter((a) => a.type === 'Cartão').map((a) => ({ label: `${a.institution} · Cartão${a.last4 ? ` ${a.last4}` : ''}`, short: `${a.institution}${a.last4 ? ` ·${a.last4}` : ''}` }))
+  const originalAccount = (editing as (Tx & { bank_account?: string | null }) | null | undefined)?.bank_account || ''
+  const [payWith, setPayWith] = useState<string>(/Cart[aã]o/.test(originalAccount) ? originalAccount : '')
+  const payField = fromBank ? {} : type === 'saida' && /Cart[aã]o/.test(payWith) ? { bank_account: payWith } : /Cart[aã]o/.test(originalAccount) ? { bank_account: null } : {}
   const [split, setSplit] = useState(false)
   const [partnerId, setPartnerId] = useState('')
   const [saving, setSaving] = useState(false)
@@ -82,7 +89,7 @@ function Form({ onClose, userId, partners, onSaved, editing, onCategoriesChange 
 
     if (editing) {
       ({ error: err } = await supabase.from('transactions')
-        .update({ amount: value, description: desc, type, category, date, ...tagField, ...(note.trim() || editing.note ? { note: note.trim() || null } : {}) })
+        .update({ amount: value, description: desc, type, category, date, ...tagField, ...payField, ...(note.trim() || editing.note ? { note: note.trim() || null } : {}) })
         .eq('id', editing.id))
     } else if (doSplit) {
       ({ error: err } = await supabase.rpc('create_split_transaction', {
@@ -94,11 +101,11 @@ function Form({ onClose, userId, partners, onSaved, editing, onCategoriesChange 
       ;({ error: err } = await supabase.from('transactions').insert(parts.map((amt, k) => ({
         user_id: userId, amount: amt, type, category, source: 'web', is_split: false,
         description: `${desc} (${k + 1}/${installments})`, date: installmentDate(date, k),
-        installment_group: group, installment_no: k + 1, installment_total: installments, ...tagField,
+        installment_group: group, installment_no: k + 1, installment_total: installments, ...tagField, ...payField,
       }))))
     } else {
       ({ error: err } = await supabase.from('transactions').insert({
-        user_id: userId, amount: value, description: desc, type, category, is_split: false, date, source: 'web', ...tagField,
+        user_id: userId, amount: value, description: desc, type, category, is_split: false, date, source: 'web', ...tagField, ...payField,
         ...(note.trim() ? { note: note.trim() } : {}),
       }))
     }
@@ -162,6 +169,18 @@ function Form({ onClose, userId, partners, onSaved, editing, onCategoriesChange 
           </label>
         )}
       </div>
+
+      {!isIn && !fromBank && (
+        <div>
+          <p className="mb-1.5 text-xs text-muted">Pago com</p>
+          <div className="flex flex-wrap gap-1.5">
+            {[{ label: '', short: '💸 Débito/Pix' }, ...cardOptions.map((c) => ({ ...c, short: `💳 ${c.short}` })), ...(!cardOptions.length ? [{ label: 'Cartão', short: '💳 Cartão' }] : [])].map((o) => (
+              <button type="button" key={o.label || 'deb'} onClick={() => setPayWith(o.label)} className={cx('h-8 rounded-lg border px-2.5 text-xs font-medium transition', payWith === o.label ? 'border-accent bg-accent/10 text-ink' : 'border-line text-muted hover:text-ink')}>{o.short}</button>
+            ))}
+          </div>
+          {/Cart[aã]o/.test(payWith) && <p className="mt-1 text-[11px] text-muted">Conta no mês em que a fatura vence. Quando o banco trouxer a compra, eu junto as duas.</p>}
+        </div>
+      )}
 
       <input value={tagsText} onChange={(e) => setTagsText(e.target.value)} placeholder="Evento (opcional): @viagem-rio @casamento" className={inputClass} />
 

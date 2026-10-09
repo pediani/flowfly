@@ -42,6 +42,11 @@ export function TransactionItem({ t, onDelete, onPay, onEdit, delay = 0 }: {
               {onCard ? <CreditCard className="h-2.5 w-2.5" /> : <Landmark className="h-2.5 w-2.5" />} {onCard ? 'Cartão' : 'Conta'} {account.split(' · ')[0] || 'Banco'}
             </span>
           )}
+          {onCard && t.source !== 'bank' && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-expense/10 px-1.5 py-0.5 text-[10px] font-medium text-expense">
+              <CreditCard className="h-2.5 w-2.5" /> {account === 'Cartão' ? 'Cartão' : `Cartão ${account.replace(' · Cartão', '').replace(/ (\d{4})$/, ' ·$1')}`}
+            </span>
+          )}
           {(t as Tx & { external_id?: string }).external_id && t.source !== 'bank' && (
             <span title="Conferido com o extrato do banco" className="inline-flex items-center gap-1 rounded-md bg-income/10 px-1.5 py-0.5 text-[10px] font-medium text-income">
               <Landmark className="h-2.5 w-2.5" /> conferido

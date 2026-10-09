@@ -59,6 +59,8 @@ export function savedMessage(
       : `📅 ${formatDateBR(entry.date)} <i>(registrado ${formatDateTimeBR(nowIso)})</i>`,
   ]
   if (entry.tags?.length) lines.push(`🏷️ ${entry.tags.map((t) => `@${escapeHtml(t)}`).join(' ')}`)
+  if (entry.bankAccount) lines.push(`💳 ${entry.bankAccount === 'Cartão' ? 'No cartão' : `Cartão ${escapeHtml(entry.bankAccount.replace(' · Cartão', '').replace(/ (\d{4})$/, ' ·$1'))}`} · entra na fatura`)
+  else if (entry.payment?.method === 'debito') lines.push('💸 Débito/Pix')
   if (parcel) {
     const parts = splitInstallments(entry.amount, entry.installments)
     lines.push(`💳 ${entry.installments}x de ${formatBRL(parts[1])} · última em ${formatDateBR(installmentDate(entry.date, entry.installments - 1))}`)
@@ -152,6 +154,7 @@ export function helpMessage(voice = false): string {
     '• <code>e salário 1000</code> → entrada',
     '• <code>mercado 120 ontem</code> → com data (<code>ontem</code>, <code>dia 3</code>, <code>05/10</code>)',
     '• <code>s tv 1200 10x</code> → parcelado (cria as 10 parcelas)',
+    '• <code>s camisa 120 cartao</code> → no cartão (pergunto qual) · <code>s camisa 120 cartao santander</code> → direto · <code>s uber 30 pix</code> → débito',
     '• <code>pizza 60 #lazer</code> → força a categoria',
     '• <code>jantar 120 @viagem-rio</code> → marca um evento (veja o total no painel)',
     '• 📷 Mande a <b>foto de um comprovante</b> ou nota e eu lanço',
@@ -184,7 +187,19 @@ export function entryKeyboard(txId: string, opts: { canSplit: boolean; isIn: boo
   const row1: InlineButton[] = [{ text: '🏷️ Categoria', callback_data: `c:${txId}` }, { text: '📅 Foi ontem', callback_data: `y:${txId}` }]
   const row2: InlineButton[] = [{ text: '↩️ Desfazer', callback_data: `u:${txId}` }]
   if (opts.canSplit && !opts.isIn) row2.unshift({ text: '👥 Dividir 50%', callback_data: `d:${txId}` })
+  if (!opts.isIn) row1.push({ text: '💳 Cartão', callback_data: `K:${txId}` })
   return { inline_keyboard: [row1, row2] }
+}
+
+/** Escolha do cartão (k:<id>:<índice> · k:<id>:x = débito/Pix) */
+export function cardChoiceKeyboard(txId: string, cards: { label: string; institution: string; last4: string; name: string }[], back = false): Keyboard {
+  const rows: InlineButton[][] = []
+  cards.forEach((c, i) => {
+    if (i % 2 === 0) rows.push([])
+    rows[rows.length - 1].push({ text: `💳 ${c.institution}${c.last4 ? ` ·${c.last4}` : ''}`, callback_data: `k:${txId}:${i}${back ? '' : ':p'}` })
+  })
+  rows.push([{ text: '💸 Débito/Pix', callback_data: `k:${txId}:x${back ? '' : ':p'}` }, ...(back ? [{ text: '← Voltar', callback_data: `b:${txId}` }] : [])])
+  return { inline_keyboard: rows }
 }
 
 export function categoryKeyboard(txId: string): Keyboard {

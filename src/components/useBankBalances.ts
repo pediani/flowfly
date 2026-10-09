@@ -22,6 +22,11 @@ function load(key: number, force = false) {
   inflight = { key, p }
 }
 
+/** Chave da última busca (para componentes que só querem ler o que já foi carregado). */
+export function currentBalancesKey(): number {
+  return cache?.key ?? 0
+}
+
 /** Busca de novo (ex.: depois de mudar o fechamento de um cartão) e atualiza todos os cards. */
 export function refreshBankBalances() {
   load(cache?.key ?? 0, true)
