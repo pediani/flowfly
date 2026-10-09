@@ -1,21 +1,15 @@
 'use client'
 
-import { useState } from 'react'
-import { F_OUTLINE, F_PATH, F_SWOOSH } from './brandPaths'
+import { F_PATH } from './brandPaths'
 import { cx } from './ui'
 
 export const APP_NAME = 'FlowNanças'
 
-/** "F" cartoon branco (com contorno e sombra) — mesmo desenho do ícone do app. */
+/** "F" da Pacifico em branco — mesmo desenho do ícone do app. */
 export function FMark({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 100 100" className={className} aria-hidden>
-      <g transform="rotate(-6 50 50)">
-        <path d={F_PATH} transform="translate(3 4)" fill="rgba(20,8,60,0.35)" />
-        <path d={F_OUTLINE} fill="none" stroke="#2a1670" strokeWidth="7" strokeLinejoin="round" />
-        <path d={F_PATH} fill="#ffffff" />
-        <path d={F_SWOOSH} fill="none" stroke="#ffffff" strokeWidth="5" strokeLinecap="round" opacity="0.65" />
-      </g>
+      <path d={F_PATH} fill="#ffffff" />
     </svg>
   )
 }
@@ -23,8 +17,8 @@ export function FMark({ className }: { className?: string }) {
 /** Quadradinho roxo com o F (sidebar, login, carregando). */
 export function AppTile({ size = 28, className }: { size?: number; className?: string }) {
   return (
-    <span className={cx('inline-flex shrink-0 items-center justify-center bg-gradient-to-br from-[#8b6dff] to-[#5b3df5] shadow-sm', className)} style={{ width: size, height: size, borderRadius: size * 0.3 }}>
-      <FMark className="h-[82%] w-[82%]" />
+    <span className={cx('inline-flex shrink-0 items-center justify-center bg-gradient-to-br from-[#8b6dff] via-[#5b3df5] to-[#3f25c9] shadow-sm', className)} style={{ width: size, height: size, borderRadius: size * 0.3 }}>
+      <FMark className="h-[74%] w-[74%]" />
     </span>
   )
 }
@@ -33,22 +27,15 @@ const LOW = ['l', 'o', 'w']
 const NANCAS = ['N', 'a', 'n', 'ç', 'a', 's']
 
 /**
- * Logo animado: F → Flow → FlowNanças, com as letras "escorrendo" para dentro.
- * Clique para ver de novo. Respeita "reduzir movimento" do sistema.
+ * Logo animado em loop: F → Flow → FlowNanças → F…
+ * O F é da Pacifico; o resto, da Righteous (retrô). As letras "crescem" de baixo, como barras de um gráfico.
  */
-export function Wordmark({ className, replay = true }: { className?: string; replay?: boolean }) {
-  const [run, setRun] = useState(0)
+export function Wordmark({ className }: { className?: string }) {
   return (
-    <span
-      key={run}
-      role="img"
-      aria-label={APP_NAME}
-      onClick={replay ? () => setRun((r) => r + 1) : undefined}
-      className={cx('ff-wm inline-flex select-none items-baseline font-extrabold tracking-[-0.03em]', replay && 'cursor-pointer', className)}
-    >
-      <span className="ff-f">F</span>
-      {LOW.map((c, i) => <span key={`l${i}`} className="ff-l" style={{ ['--d' as string]: 620 + i * 90 }}>{c}</span>)}
-      {NANCAS.map((c, i) => <span key={`n${i}`} className="ff-l text-accent" style={{ ['--d' as string]: 1350 + i * 70 }}>{c}</span>)}
+    <span role="img" aria-label={APP_NAME} className={cx('ff-wm inline-flex select-none items-baseline whitespace-nowrap', className)}>
+      <span className="ff-F">F</span>
+      {LOW.map((c, i) => <span key={`l${i}`} className="ff-c ff-low" style={{ animationDelay: `${0.6 + i * 0.09}s` }}>{c}</span>)}
+      {NANCAS.map((c, i) => <span key={`n${i}`} className="ff-c ff-nan text-accent" style={{ animationDelay: `${1.5 + i * 0.07}s` }}>{c}</span>)}
     </span>
   )
 }

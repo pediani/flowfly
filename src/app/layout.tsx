@@ -1,10 +1,13 @@
 import type { Metadata, Viewport } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
+import { Geist, Geist_Mono, Pacifico, Righteous } from 'next/font/google'
 import { themeInitScript } from '../lib/theme'
 import './globals.css'
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-geist' })
 const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono' })
+// Logo: F da Pacifico + letras da Righteous
+const pacifico = Pacifico({ weight: '400', subsets: ['latin'], variable: '--font-pacifico' })
+const righteous = Righteous({ weight: '400', subsets: ['latin'], variable: '--font-righteous' })
 
 export const metadata: Metadata = {
   title: 'FlowNanças · Financeiro',
@@ -26,7 +29,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" data-theme="dark" suppressHydrationWarning className={`${geist.variable} ${geistMono.variable}`}>
+    <html lang="pt-BR" data-theme="dark" suppressHydrationWarning className={`${geist.variable} ${geistMono.variable} ${pacifico.variable} ${righteous.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>

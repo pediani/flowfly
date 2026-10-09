@@ -138,7 +138,7 @@ export default function Home() {
       <div className="relative z-10 flex min-h-dvh items-center justify-center">
         <div className="flex flex-col items-center gap-4 animate-fade-in">
           <AppTile size={56} className="animate-pulse" />
-          <Wordmark className="text-xl" replay={false} />
+          <Wordmark className="text-xl" />
         </div>
       </div>
     )
