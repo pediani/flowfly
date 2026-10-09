@@ -96,7 +96,7 @@ function projectInstallments(txs: PluggyTx[]): BillItem[] {
 }
 
 /** Último fechamento conhecido: o mais recente entre a lista de faturas e as compras já faturadas. */
-function closedBillsFromTxs(txs: PluggyTx[]) {
+function closedBillsFromTxs(txs: PluggyTx[], today: string) {
   const map = new Map<string, { end: string; txs: PluggyTx[] }>()
   for (const t of txs) {
     const id = t.creditCardMetadata?.billId
@@ -105,13 +105,18 @@ function closedBillsFromTxs(txs: PluggyTx[]) {
     g.txs.push(t); if (day(t.date)! > g.end) g.end = day(t.date)!
     map.set(id, g)
   }
-  return [...map.values()].sort((a, b) => a.end.localeCompare(b.end))
+  // Só faturas de fato fechadas: sem lançamento pendente e terminadas há pelo menos 3 dias.
+  // (Alguns bancos já dão id à fatura aberta; ela não pode virar "fechada a pagar".)
+  const limit = addDays(today, -3)
+  return [...map.values()]
+    .filter((g) => !g.txs.some((t) => (t.status || '').toUpperCase() === 'PENDING') && g.end <= limit)
+    .sort((a, b) => a.end.localeCompare(b.end))
 }
 
 export function computeBill(txs: PluggyTx[], bills: PluggyBill[], closeHint: string | null | undefined, dueHint: string | null | undefined, today: string, days: CardDays = {}): BillInfo {
   const sortedBills = [...bills].sort((a, b) => day(a.dueDate)!.localeCompare(day(b.dueDate)!))
   const lastBill = sortedBills[sortedBills.length - 1]
-  const fromTxs = closedBillsFromTxs(txs)
+  const fromTxs = closedBillsFromTxs(txs, today)
   const lastGroup = fromTxs[fromTxs.length - 1]
 
   // Fechamento: o que você definiu > faturas/compras faturadas > o que o banco informa

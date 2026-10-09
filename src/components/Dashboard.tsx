@@ -7,7 +7,10 @@ import {
 } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import { supabase } from '../lib/supabase'
-import { addDays, addMonths, currentMonthKey, formatDateBR, monthLabel, todayBR } from '../lib/dates'
+import { addDays, addMonths, currentMonthKey, daysInMonth, formatDateBR, monthLabel, todayBR } from '../lib/dates'
+import { buildCashFlow } from '../lib/cashflow'
+import { computeSafeToSpend } from '../lib/safeToSpend'
+import type { FuturePoint } from '../lib/finance'
 import { detectAnomalies, detectSubscriptions } from '../lib/analysis'
 import { formatBRL } from '../lib/format'
 import { categoryNames, getCategory } from '../lib/categories'
@@ -78,6 +81,39 @@ export default function Dashboard(p: Props) {
   const [section, setSection] = useState<'resumo' | 'gastos' | 'futuro' | 'patrimonio'>('resumo')
   const accounts = useBankBalances(p.settlementKey)
   const hasBank = !!accounts?.some((a) => a.type === 'Conta')
+
+  // Com banco conectado, toda previsão sai da mesma conta: saldo real + lançado depois + entradas − saídas (faturas, fixas, agendados)
+  const bank = useMemo(() => {
+    if (!isCurrent || !accounts?.some((a) => a.type === 'Conta')) return null
+    const eom = `${monthKey}-${daysInMonth(monthKey)}`
+    const unsynced = computeSafeToSpend(accounts, recurring, txs, { today })?.unsynced ?? 0
+    const lastKey = addMonths(monthKey, 5)
+    const flow = buildCashFlow(accounts, recurring, txs, `${lastKey}-${daysInMonth(lastKey)}`, today, { startOffset: unsynced })
+    const atEom = flow.series.find((x) => x.date === eom)?.saldo ?? flow.start
+    const lowMonth = flow.series.filter((x) => x.date <= eom).reduce((m, x) => (x.saldo < m.saldo ? x : m), { date: today, saldo: flow.start, label: '' })
+    // Próximos meses pela mesma conta
+    const future: FuturePoint[] = []
+    for (let i = 0; i < 6; i++) {
+      const k = addMonths(monthKey, i)
+      const ev = flow.events.filter((e) => e.date.startsWith(k))
+      const end = flow.series.filter((x) => x.date.startsWith(k)).pop()?.saldo ?? atEom
+      const entradas = ev.filter((e) => e.amount > 0).reduce((a, e) => a + e.amount, 0)
+      const saidas = -ev.filter((e) => e.amount < 0).reduce((a, e) => a + e.amount, 0)
+      future.push({ key: k, label: monthLabel(k, 'short'), entradas: Math.round(entradas * 100) / 100, saidas: Math.round(saidas * 100) / 100, saldoMes: Math.round((entradas - saidas) * 100) / 100, acumulado: end, realizado: false })
+    }
+    const futureInst = accounts.filter((a) => a.type === 'Cartão').reduce((a, c) => a + Math.max(0, Number(c.usedLimit ?? 0) - Number(c.balance ?? 0)), 0)
+    return { eom, atEom, lowMonth, future, futureInst }
+  }, [isCurrent, accounts, recurring, txs, today, monthKey])
+
+  // Avisos coerentes com o saldo do banco (os de projeção pelos lançamentos saem)
+  const insights = useMemo(() => {
+    if (!bank) return data.insights
+    const base = data.insights.filter((i) => i.id !== 'neg' && i.id !== 'good-proj')
+    const extra: Insight[] = bank.lowMonth.saldo < 0
+      ? [{ id: 'bank-neg', level: 'danger', emoji: '🚨', title: `Conta fica negativa em ${formatDateBR(bank.lowMonth.date).slice(0, 5)}`, text: `Chega a ${formatBRL(bank.lowMonth.saldo)} com as faturas e contas previstas. Entre dinheiro antes ou adie algo.` }]
+      : base.some((i) => i.level === 'danger' || i.level === 'warn') ? [] : [{ id: 'bank-ok', level: 'good', emoji: '🌱', title: 'Conta no azul até o fim do mês', text: `Previsão de ${formatBRL(bank.atEom)} na conta em ${formatDateBR(bank.eom).slice(0, 5)}, já pagando as faturas que vencem.` }]
+    return [...extra, ...base].slice(0, 6)
+  }, [bank, data.insights])
   const delta = prev.saidas > 0 ? ((s.saidas - prev.saidas) / prev.saidas) * 100 : null
 
   return (
@@ -113,12 +149,12 @@ export default function Dashboard(p: Props) {
         </div>
         <div className="hidden space-y-4 lg:block">
           {isCurrent && <UpcomingCard txs={txs} recurring={recurring} refreshKey={p.settlementKey} />}
-          {data.insights.length > 0 && <AlertsColumn items={data.insights} />}
+          {insights.length > 0 && <AlertsColumn items={insights} />}
         </div>
       </div>
 
       {/* celular: avisos em carrossel */}
-      <div className="lg:hidden">{data.insights.length > 0 && <Insights items={data.insights} />}</div>
+      <div className="lg:hidden">{insights.length > 0 && <Insights items={insights} />}</div>
 
       {/* PC: o resto organizado em abas */}
       <div className="hidden gap-1 rounded-xl bg-surface-2 p-1 lg:inline-flex">
@@ -136,13 +172,13 @@ export default function Dashboard(p: Props) {
       <Card className="p-5 md:p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="text-sm text-muted">Resultado de {monthLabel(monthKey)} <span className="text-xs">(entradas − saídas)</span></p>
+            <p className="text-sm text-muted">Lançamentos de {monthLabel(monthKey)} <span className="text-xs">(entradas − saídas registradas no mês)</span></p>
             <Money value={s.saldo} className={cx('mt-1 block text-2xl font-semibold tracking-tight md:text-3xl', s.saldo < 0 && 'text-expense')} />
           </div>
           <div className="flex flex-wrap gap-2 text-xs">
-            {mp.isCurrent && (
-              <Pill icon={Sparkles} className={mp.projectedSaldo >= 0 ? 'text-income' : 'text-expense'}>
-                Previsão <b className="tabular">{formatBRL(mp.projectedSaldo)}</b>
+            {bank && (
+              <Pill icon={Sparkles} className={bank.atEom >= 0 ? 'text-income' : 'text-expense'}>
+                Na conta em {formatDateBR(bank.eom).slice(0, 5)} <b className="tabular">{formatBRL(bank.atEom)}</b>
               </Pill>
             )}
             {delta !== null && s.saidas > 0 && (
@@ -157,8 +193,8 @@ export default function Dashboard(p: Props) {
       )}
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Entradas" value={s.entradas} icon={ArrowUpRight} color="text-income" delay={40} />
-        <Kpi label="Saídas" value={s.saidas} icon={ArrowDownRight} color="text-expense" delay={70} />
+        <Kpi label="Entradas" value={s.entradas} icon={ArrowUpRight} color="text-income" delay={40} hint={bank ? 'Lançadas no mês (inclui as do banco)' : undefined} />
+        <Kpi label="Saídas" value={s.saidas} icon={ArrowDownRight} color="text-expense" delay={70} hint={bank ? 'Gastos do mês pela data da compra (cartão incluso)' : undefined} />
         <Kpi label="A receber" value={s.aReceber} icon={Handshake} color="text-accent" delay={100} hint="Metade das despesas que você dividiu" />
         <Kpi label="A pagar" value={data.debts} icon={Handshake} color="text-warn" delay={130} hint="Pendências com seu parceiro" />
       </div>
@@ -212,7 +248,9 @@ export default function Dashboard(p: Props) {
           <CardHeader
             title={`${monthLabel(monthKey)} dia a dia`}
             icon={<TrendingUp className="h-4 w-4 text-muted" />}
-            subtitle={mp.isCurrent
+            subtitle={bank
+              ? <>Lançamentos acumulados no mês (compras no cartão contam na data da compra). O saldo real da conta está em <b className="text-ink">Quanto posso gastar → Dia a dia</b>.</>
+              : mp.isCurrent
               ? <>Projeção: lançado até hoje + contas fixas a vencer{mp.avgMonthlyVariable ? <> · gastos avulsos não são estimados (sua média: <b className="text-ink">{formatBRL(mp.avgMonthlyVariable)}/mês</b>)</> : null}</>
               : mp.isFuture ? 'Mês futuro: veja a projeção dos próximos meses.' : 'Saldo acumulado ao longo do mês.'}
           />
@@ -235,9 +273,11 @@ export default function Dashboard(p: Props) {
         <CardHeader
           title="Projeção dos próximos meses"
           icon={<Sparkles className="h-4 w-4 text-muted" />}
-          subtitle="Só compromissos conhecidos: contas fixas e parcelas agendadas. A linha é o saldo acumulado."
+          subtitle={bank
+            ? <>Saldo previsto da conta, mês a mês: faturas já conhecidas, contas fixas e lançamentos agendados. A linha é o saldo no fim de cada mês.{bank.futureInst > 0 ? <> Parcelas futuras do cartão ({formatBRL(bank.futureInst)}) ainda não entram: o banco só informa o total.</> : null}</>
+            : 'Só compromissos conhecidos: contas fixas e parcelas agendadas. A linha é o saldo acumulado.'}
         />
-        <div className="h-[250px] px-2"><ProjectionChart data={data.future} /></div>
+        <div className="h-[250px] px-2"><ProjectionChart data={bank ? bank.future : data.future} /></div>
         <Legend items={[{ color: 'var(--income)', label: 'Entradas' }, { color: 'var(--expense)', label: 'Saídas' }, { color: 'var(--accent)', label: 'Saldo acumulado' }]} />
       </Card>
       </section>

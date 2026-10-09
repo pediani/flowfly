@@ -88,7 +88,7 @@ export default function NetWorthCard({ refreshKey, txs, recurring }: { refreshKe
           </div>
           {c.futureInstallments > 0 && (
             <p className="mt-2 text-[11px] text-muted">
-              Parcelas futuras são compromissos dos próximos meses: não entram no “hoje”. Se quitasse tudo agora: <b className="text-ink">{formatBRL(now - c.futureInstallments)}</b>.
+              Parcelas futuras são compromissos dos próximos meses: não entram no “hoje”. Se quitasse tudo agora: <b className="text-ink">{now - c.futureInstallments < 0 ? '− ' : ''}{formatBRL(Math.abs(now - c.futureInstallments))}</b>.
             </p>
           )}
         </div>
