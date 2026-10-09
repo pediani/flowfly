@@ -2,8 +2,8 @@ import type { MetadataRoute } from 'next'
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'FlowFly · Financeiro',
-    short_name: 'FlowFly',
+    name: 'FlowNanças · Financeiro',
+    short_name: 'FlowNanças',
     description: 'Controle financeiro pessoal e do casal',
     start_url: '/',
     display: 'standalone',

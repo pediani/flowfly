@@ -1,9 +1,10 @@
 'use client'
 
+import { AppTile, Wordmark } from './Brand'
 import { useState, type ReactNode } from 'react'
 import {
   CalendarClock, ChevronLeft, ChevronRight, Home, ListOrdered, LogOut, Moon, PanelLeftClose, PanelLeftOpen,
-  Plus, Send, Sun, Users, Volume2, VolumeX, Zap,
+  Plus, Send, Sun, Users, Volume2, VolumeX,
 } from 'lucide-react'
 import { addMonths, currentMonthKey, monthLabel } from '../lib/dates'
 import { isSoundOn, play, setSoundOn } from '../lib/sounds'
@@ -188,10 +189,8 @@ function NavButton({ label, icon: Icon, active, onClick }: { label: string; icon
 function Logo() {
   return (
     <div className="flex items-center gap-2">
-      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent">
-        <Zap className="h-4 w-4 text-white" fill="currentColor" />
-      </div>
-      <p className="text-[15px] font-semibold tracking-tight">FlowFly</p>
+      <AppTile size={28} />
+      <Wordmark className="text-[17px]" />
     </div>
   )
 }

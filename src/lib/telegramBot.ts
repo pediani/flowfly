@@ -147,7 +147,7 @@ export function undoMessage(t: Tx, monthTxs: Tx[], key: string): string {
 
 export function helpMessage(voice = false): string {
   return [
-    '⚡ <b>FlowFly</b> — seu financeiro no bolso',
+    '💜 <b>FlowNanças</b> — seu financeiro no bolso',
     '',
     '<b>Registrar</b>',
     '• <code>s uber 50,40</code> → saída',

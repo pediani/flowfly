@@ -202,7 +202,7 @@ export async function readReceipt(image: Blob, mime: string, ctx: { userId?: str
 /** Responde perguntas sobre as finanças do usuário usando um resumo compacto dos dados. */
 export async function answerQuestion(question: string, context: string, ctx: { userId?: string } = {}): Promise<string | null> {
   const system = [
-    'Você é o assistente financeiro do app FlowFly. Responda em português do Brasil, de forma curta (até 6 linhas), direta e simpática.',
+    'Você é o assistente financeiro do app FlowNanças. Responda em português do Brasil, de forma curta (até 6 linhas), direta e simpática.',
     'Use SOMENTE os dados abaixo. Se a resposta não estiver nos dados, diga isso e sugira o que registrar. Não invente números.',
     'Formate valores como R$ 1.234,56. Pode usar emojis com moderação. Não use markdown com ** ou #.',
     '', 'DADOS DO USUÁRIO:', context,

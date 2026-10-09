@@ -1,8 +1,8 @@
 'use client'
 
+import { AppTile, Wordmark } from '../components/Brand'
 import { useCallback, useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { Zap } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { currentMonthKey } from '../lib/dates'
 import { play } from '../lib/sounds'
@@ -137,10 +137,8 @@ export default function Home() {
     return (
       <div className="relative z-10 flex min-h-dvh items-center justify-center">
         <div className="flex flex-col items-center gap-4 animate-fade-in">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent animate-pulse">
-            <Zap className="h-6 w-6 text-white" fill="currentColor" />
-          </div>
-          <p className="text-xs uppercase tracking-[0.3em] text-muted">FlowFly</p>
+          <AppTile size={56} className="animate-pulse" />
+          <Wordmark className="text-xl" replay={false} />
         </div>
       </div>
     )

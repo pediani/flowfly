@@ -28,7 +28,7 @@ const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || ''
 export const maxDuration = 30
 
 export async function GET() {
-  return NextResponse.json({ status: 'FlowFly Telegram Webhook is active and listening!' })
+  return NextResponse.json({ status: 'FlowNanças Telegram Webhook is active and listening!' })
 }
 
 export async function POST(request: Request) {
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true })
     }
     if (!userId) {
-      await sendMessage(chatId, '👋 <b>Bem-vindo ao FlowFly!</b>\n\nPara começar, abra o painel, vá na aba <b>Conexões</b> e toque em <b>Conectar Telegram</b>.')
+      await sendMessage(chatId, '👋 <b>Bem-vindo ao FlowNanças!</b>\n\nPara começar, abra o painel, vá na aba <b>Conexões</b> e toque em <b>Conectar Telegram</b>.')
       return NextResponse.json({ ok: true })
     }
 

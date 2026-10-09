@@ -134,7 +134,7 @@ export async function listInvestments(itemId: string): Promise<PluggyInvestment[
   return out
 }
 
-/** Garante um webhook de "transactions/created" apontando para o FlowFly. */
+/** Garante um webhook de "transactions/created" apontando para o FlowNanças. */
 export async function ensureWebhook(url: string, secret: string) {
   const r = await call<{ results?: { url: string; event: string }[] } | { url: string; event: string }[]>('/webhooks')
   const list = Array.isArray(r) ? r : r.results || []

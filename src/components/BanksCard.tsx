@@ -96,7 +96,7 @@ export default function BanksCard({ onSynced }: { onSynced: () => void }) {
     setMsg({
       ok: !failed.length,
       text: `Importado o que já estava disponível: ${sync.json.imported ?? 0} novo(s), ${sync.json.matched ?? 0} juntado(s).` +
-        (viaMeuPluggy ? ' Conexões pelo Meu Pluggy (gratuito) não aceitam atualização sob demanda: o banco é consultado 1 vez por dia, no horário indicado em cada banco. Quando os dados novos chegam, o FlowFly importa sozinho e avisa no Telegram.' : '') +
+        (viaMeuPluggy ? ' Conexões pelo Meu Pluggy (gratuito) não aceitam atualização sob demanda: o banco é consultado 1 vez por dia, no horário indicado em cada banco. Quando os dados novos chegam, o FlowNanças importa sozinho e avisa no Telegram.' : '') +
         (failed.length ? ` Não atualizou: ${failed.map((f: { institution: string; error: string }) => `${f.institution} (${f.error})`).join('; ')}.` : ''),
     })
     load(); onSynced()

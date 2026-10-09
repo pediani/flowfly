@@ -1,22 +1,24 @@
-// Ícone do FlowFly (usado em ImageResponse: só estilos inline e flexbox)
+// Ícone do FlowNanças: "F" branco cartoon num quadrado roxo (ImageResponse: só estilos inline e flexbox)
+import { F_OUTLINE, F_PATH, F_SWOOSH } from './brandPaths'
+
 export function AppIcon({ size, maskable = false }: { size: number; maskable?: boolean }) {
-  const inner = maskable ? size * 0.62 : size * 0.78
+  const inner = maskable ? size : size * 0.86
+  const mark = maskable ? size * 0.62 : inner * 0.8
   return (
-    <div
-      style={{
-        width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: maskable ? '#7c5cff' : 'transparent',
-      }}
-    >
+    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: maskable ? '#6d4dff' : 'transparent' }}>
       <div
         style={{
-          width: inner, height: inner, borderRadius: inner * 0.28, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: '#7c5cff',
-          boxShadow: '0 0 0 rgba(0,0,0,0)',
+          width: inner, height: inner, borderRadius: maskable ? 0 : inner * 0.26, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backgroundImage: 'linear-gradient(140deg, #9a7dff 0%, #6d4dff 55%, #4a2be0 100%)',
         }}
       >
-        <svg width={inner * 0.56} height={inner * 0.56} viewBox="0 0 24 24" fill="none">
-          <path d="M13 2L4.5 13.5H11L10 22L19.5 10H13L13 2Z" fill="#ffffff" stroke="#ffffff" strokeWidth="1" strokeLinejoin="round" />
+        <svg width={mark} height={mark} viewBox="0 0 100 100">
+          <g transform="rotate(-6 50 50)">
+            <path d={F_PATH} transform="translate(3 4)" fill="rgba(20,8,60,0.35)" />
+            <path d={F_OUTLINE} fill="none" stroke="#2a1670" strokeWidth="7" strokeLinejoin="round" />
+            <path d={F_PATH} fill="#ffffff" />
+            <path d={F_SWOOSH} fill="none" stroke="#ffffff" strokeWidth="5" strokeLinecap="round" opacity="0.65" />
+          </g>
         </svg>
       </div>
     </div>

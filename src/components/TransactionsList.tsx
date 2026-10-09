@@ -32,7 +32,7 @@ function exportCsv(rows: Tx[], name: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `flowfly-${name}.csv`
+  a.download = `flownancas-${name}.csv`
   a.click()
   URL.revokeObjectURL(url)
 }

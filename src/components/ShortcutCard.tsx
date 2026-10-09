@@ -49,7 +49,7 @@ export default function ShortcutCard() {
     <div className={card}>
       <div className="px-5 pt-5 pb-3">
         <h3 className="flex items-center gap-2 text-[15px] font-semibold tracking-tight"><Mic className="h-4 w-4 text-accent" /> Atalho de voz (Siri / Android)</h3>
-        <p className="mt-1 text-xs text-muted">“E aí Siri, FlowFly” → “gastei 30 no uber” e pronto: lança e avisa no Telegram.</p>
+        <p className="mt-1 text-xs text-muted">“E aí Siri, FlowNanças” → “gastei 30 no uber” e pronto: lança e avisa no Telegram.</p>
       </div>
       <div className="space-y-3 px-5 pb-5 text-xs">
         {err && <p className="rounded-lg border border-warn/40 bg-warn/5 p-2 text-warn">Rode o SQL de tags/atalhos no Supabase para ativar ({err}).</p>}
@@ -70,11 +70,11 @@ export default function ShortcutCard() {
 
         <ol className="list-decimal space-y-1.5 pl-4 text-muted">
           {os === 'ios' ? (<>
-            <li>Abra o app <b className="text-ink">Atalhos</b> → <b className="text-ink">+</b> → nomeie como <b className="text-ink">FlowFly</b> (é o que você vai falar para a Siri).</li>
+            <li>Abra o app <b className="text-ink">Atalhos</b> → <b className="text-ink">+</b> → nomeie como <b className="text-ink">FlowNanças</b> (é o que você vai falar para a Siri).</li>
             <li>Ação <b className="text-ink">Ditar texto</b> (idioma Português).</li>
             <li>Ação <b className="text-ink">Obter conteúdo do URL</b>: URL <code className="text-ink">{url}</code> <button onClick={() => copy(url)} className="align-middle"><Copy className="inline h-3 w-3" /></button>, Método <b className="text-ink">POST</b>, Cabeçalho <code className="text-ink">Authorization</code> = <code className="text-ink">Bearer SEU_TOKEN</code>, Corpo <b className="text-ink">JSON</b> com chave <code className="text-ink">text</code> = <i>Texto ditado</i>.</li>
             <li>Ação <b className="text-ink">Mostrar resultado</b> (ou <b className="text-ink">Falar texto</b>) com o <i>Conteúdo do URL</i>.</li>
-            <li>Diga: <b className="text-ink">“E aí Siri, FlowFly”</b>. Dá para pôr na tela de início ou no botão de Ação.</li>
+            <li>Diga: <b className="text-ink">“E aí Siri, FlowNanças”</b>. Dá para pôr na tela de início ou no botão de Ação.</li>
           </>) : (<>
             <li>Instale o app <b className="text-ink">HTTP Shortcuts</b> (Play Store, gratuito).</li>
             <li>Novo atalho → Método <b className="text-ink">POST</b>, URL <code className="text-ink">{url}</code> <button onClick={() => copy(url)} className="align-middle"><Copy className="inline h-3 w-3" /></button>.</li>

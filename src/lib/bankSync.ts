@@ -1,4 +1,4 @@
-// Sincroniza lançamentos do banco (Pluggy) com o FlowFly, juntando com o que já foi registrado à mão.
+// Sincroniza lançamentos do banco (Pluggy) com o FlowNanças, juntando com o que já foi registrado à mão.
 import { detectCategory, getCategory, normalize } from './categories'
 import { addDays, formatDateBR, todayBR } from './dates'
 import { formatBRL } from './format'

@@ -7,10 +7,10 @@ const geist = Geist({ subsets: ['latin'], variable: '--font-geist' })
 const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono' })
 
 export const metadata: Metadata = {
-  title: 'FlowFly · Financeiro',
+  title: 'FlowNanças · Financeiro',
   description: 'Controle financeiro pessoal e do casal, com registro pelo Telegram',
-  applicationName: 'FlowFly',
-  appleWebApp: { capable: true, title: 'FlowFly', statusBarStyle: 'black-translucent' },
+  applicationName: 'FlowNanças',
+  appleWebApp: { capable: true, title: 'FlowNanças', statusBarStyle: 'black-translucent' },
   formatDetection: { telephone: false },
 }
 
