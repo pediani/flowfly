@@ -1,5 +1,6 @@
 'use client'
 
+import { AiCategorizeButton } from './AiCategorize'
 import { useState } from 'react'
 import { Pencil, Plus, Tags, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -85,6 +86,7 @@ export default function CategoriesCard({ rows, onChange }: { rows: CategoryRow[]
       <CardHeader title="Categorias" icon={<Tags className="h-4 w-4 text-muted" />} subtitle="Crie as suas além das padrão; as palavras-chave ensinam o app e o bot a reconhecer sozinhos"
         action={!adding && <button onClick={() => { play('tap'); setAdding(true) }} className="inline-flex items-center gap-1 text-xs font-medium text-accent"><Plus className="h-3.5 w-3.5" /> Nova</button>} />
       <div className="space-y-3 px-5 pb-5">
+        <AiCategorizeButton onDone={onChange} />
         {adding && <CategoryForm onSaved={() => { setAdding(false); onChange() }} onCancel={() => setAdding(false)} />}
         <div className="flex flex-wrap gap-2">
           {CATEGORIES.map((c) => (

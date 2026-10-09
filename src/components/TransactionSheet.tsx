@@ -112,6 +112,11 @@ function Form({ onClose, userId, partners, onSaved, editing, onCategoriesChange 
     setSaving(false)
 
     if (err) { play('error'); setError(err.message); return }
+    // Trocou a categoria: o app aprende o estabelecimento e corrige os parecidos
+    if (editing && category !== (editing.category || 'Geral')) {
+      const { data: s } = await supabase.auth.getSession()
+      await fetch('/api/categories/learn', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.session?.access_token || ''}` }, body: JSON.stringify({ txId: editing.id, category }) }).catch(() => null)
+    }
     play(editing ? 'success' : isIn ? 'income' : 'expense')
     onSaved()
     onClose()

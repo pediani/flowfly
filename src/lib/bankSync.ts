@@ -3,6 +3,7 @@ import { detectCategory, getCategory, normalize } from './categories'
 import { addDays, formatDateBR, todayBR } from './dates'
 import { formatBRL } from './format'
 import { TX_COLS, loadUserCategories, type Db, type TxRow } from './botData'
+import { classifyWithAI, loadRules, ruleKey } from './aiCategorize'
 import { getItem, listAccounts, listTransactions, type PluggyAccount, type PluggyTx } from './pluggy'
 import { escapeHtml, type Keyboard } from './telegramBot'
 import { sendMessage } from './telegramApi'
@@ -197,13 +198,18 @@ export async function syncConnection(db: Db, conn: BankConnection, opts: { initi
       const meta = t.creditCardMetadata
       toInsert.push({
         user_id: conn.user_id, amount, type, date, description, source: 'bank', is_split: false,
-        category: mapCategory(t, description, type),
+        category: mapCategory(t, description, type), category_by: 'auto', _hint: t.category || null,
         external_id: t.id, bank_description: t.descriptionRaw || t.description, bank_account: label,
         ...(meta?.totalInstallments && meta.totalInstallments > 1 ? { installment_no: meta.installmentNumber, installment_total: meta.totalInstallments } : {}),
       })
     }
     if (toInsert.length) {
-      const { data, error } = await db.from('transactions').insert(toInsert).select(TX_COLS)
+      await categorizeNew(db, conn.user_id, toInsert)
+      let { data, error } = await db.from('transactions').insert(toInsert).select(TX_COLS)
+      if (error && /category_by/.test(error.message)) {   // migração 20261015 ainda não rodada
+        for (const r of toInsert) delete r.category_by
+        ;({ data, error } = await db.from('transactions').insert(toInsert).select(TX_COLS))
+      }
       if (error) throw new Error(`Erro ao gravar lançamentos do banco: ${error.message}`)
       result.imported = (data || []) as TxRow[]
     }
@@ -211,6 +217,27 @@ export async function syncConnection(db: Db, conn: BankConnection, opts: { initi
 
   await db.from('bank_connections').update({ last_sync_at: new Date().toISOString(), institution, status: item.status }).eq('id', conn.id)
   return result
+}
+
+/** Categoria dos novos: regra que você ensinou > IA > regra fixa (palavras-chave + categoria da Pluggy). */
+async function categorizeNew(db: Db, userId: string, rows: Record<string, unknown>[]) {
+  const rules = await loadRules(db, userId)
+  const pending: Record<string, unknown>[] = []
+  for (const r of rows) {
+    const rule = rules.get(ruleKey(String(r.description), r.bank_description as string | null))
+    if (rule) { r.category = rule; r.category_by = 'rule' } else pending.push(r)
+  }
+  const examples = [...rules.entries()]
+  for (let i = 0; i < pending.length && i < 120; i += 40) {
+    const batch = pending.slice(i, i + 40)
+    const { categories, retryAfterMs } = await classifyWithAI(batch.map((r) => ({
+      description: String(r.description), bankDescription: r.bank_description as string | null, amount: Number(r.amount),
+      type: r.type as 'entrada' | 'saida', hint: r._hint as string | null, account: r.bank_account as string | null,
+    })), { userId, examples, db, purpose: 'categorias (importação)' })
+    batch.forEach((r, k) => { if (categories[k]) { r.category = categories[k]; r.category_by = 'ai' } })
+    if (retryAfterMs) break   // limite da IA: o resto fica com a regra fixa
+  }
+  for (const r of rows) delete r._hint
 }
 
 type BankRow = { id: string; external_id: string | null; date: string; type: string; amount: number; bank_description: string | null; bank_account: string | null; category: string | null; note?: string | null }

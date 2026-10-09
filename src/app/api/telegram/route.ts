@@ -1,3 +1,4 @@
+import { learnCategory } from '../../../lib/aiCategorize'
 import { GENERIC_CARD, cardShort, listUserCards } from '../../../lib/cards'
 import { NextResponse } from 'next/server'
 import { allCategories, detectCategory } from '../../../lib/categories'
@@ -383,8 +384,10 @@ async function handleCallback(db: Db, cq: CallbackQuery) {
       if (!cat) { await answerCallback(cq.id); return }
       const rows = await rowsOf(db, row)
       await db.from('transactions').update({ category: cat.name }).in('id', rows.map((r) => r.id))
+      const learned = await learnCategory(db, userId, row.id, cat.name).catch(() => 0)
       await answerCallback(cq.id, `${cat.emoji} ${cat.name}`)
       await editMessage(chatId, messageId, await rerender(rows.map((r) => ({ ...r, category: cat.name }))), kb)
+      if (learned) await sendMessage(chatId, `🧠 Anotado: daqui pra frente esse estabelecimento vai como ${cat.emoji} <b>${escapeHtml(cat.name)}</b>. Corrigi também ${learned} lançamento${learned > 1 ? 's' : ''} parecido${learned > 1 ? 's' : ''}.`)
       return
     }
     case 'y': {

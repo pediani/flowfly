@@ -1,5 +1,6 @@
 'use client'
 
+import { AiCategorizeButton } from './AiCategorize'
 import { useMemo, useState } from 'react'
 import { isCardTx } from '../lib/paymentDate'
 import { Download, Search, SearchX } from 'lucide-react'
@@ -36,7 +37,8 @@ function exportCsv(rows: Tx[], name: string) {
   URL.revokeObjectURL(url)
 }
 
-export default function TransactionsList({ txs, monthKey, onDelete, onPay, onEdit, recurring = [], refreshKey = 0 }: {
+export default function TransactionsList({ txs, monthKey, onDelete, onPay, onEdit, recurring = [], refreshKey = 0, onReload }: {
+  onReload?: () => void
   txs: Tx[]
   monthKey: string
   onDelete: (t: Tx) => void
@@ -83,12 +85,15 @@ export default function TransactionsList({ txs, monthKey, onDelete, onPay, onEdi
   }, [txs])
 
   const switcher = (
+    <div className="flex flex-wrap items-center gap-2">
     <div className="inline-flex rounded-xl bg-surface-2 p-1">
       {(['lista', 'calendario'] as const).map((v) => (
         <button key={v} onClick={() => { play('toggle'); setView(v) }} className={cx('h-8 rounded-lg px-3 text-xs font-medium', view === v ? 'bg-surface text-ink shadow-[var(--shadow)]' : 'text-muted')}>
           {v === 'lista' ? 'Lista' : 'Calendário'}
         </button>
       ))}
+    </div>
+    {onReload && txs.some((t) => t.source === 'bank') && <AiCategorizeButton onDone={onReload} />}
     </div>
   )
 
